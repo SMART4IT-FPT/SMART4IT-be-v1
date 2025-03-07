@@ -4,7 +4,8 @@ from fastapi import HTTPException, status
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from ..schemas.criteria_schema import CriteriaSchema
-from ..configs.llm_config import gpt_model, gemini_model
+# from ..configs.llm_config import gpt_model, gemini_model
+from ..configs.llm_config import gemini_model
 from ..utils.utils import create_pydantic_object
 from ..utils.prompt import prompt_template, native_contruct_template
 from ..utils.constants import DEFAULT_LLM_PROVIDER
@@ -46,7 +47,7 @@ class LLMProvider:
 
     def __init__(self):
         self.providers = {
-            "gpt": gpt_model,
+            # "gpt": gpt_model,
             "gemini": gemini_model
         }
 

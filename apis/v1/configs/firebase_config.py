@@ -2,6 +2,8 @@ import os
 import firebase_admin as admin
 from firebase_admin import firestore
 from firebase_admin import storage
+from dotenv import load_dotenv
+load_dotenv()
 
 # Initialize credentials
 cred_dict = {
