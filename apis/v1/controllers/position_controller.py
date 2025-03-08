@@ -7,7 +7,7 @@ from ..schemas.position_schema import PositionSchema
 from ..schemas.criteria_schema import CriteriaSchema
 from ..schemas.jd_schema import JDSchema
 from ..controllers.cv_controller import delete_cvs_by_ids
-from ..providers import vector_db
+# from ..providers import vector_db
 
 
 def _validate_permissions(project_id: AnyStr, user: UserSchema):
@@ -30,7 +30,6 @@ def _validate_permissions(project_id: AnyStr, user: UserSchema):
 
     return project
 
-
 def get_all_positions_by_ids(project_id: AnyStr, user: UserSchema):
     '''
     Get all positions by the list of position ids.
@@ -42,7 +41,6 @@ def get_all_positions_by_ids(project_id: AnyStr, user: UserSchema):
     positions = PositionSchema.find_all_by_ids(project.positions)
 
     return positions
-
 
 def get_position_by_id(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
     '''
@@ -67,7 +65,6 @@ def get_position_by_id(project_id: AnyStr, position_id: AnyStr, user: UserSchema
         )
 
     return position
-
 
 def get_public_position_by_id(position_id: AnyStr):
     '''
@@ -99,7 +96,6 @@ def get_public_position_by_id(position_id: AnyStr):
 
     return position
 
-
 def create_new_position(project_id: AnyStr, data: BaseModel, user: UserSchema):
     '''
     Create a new position.
@@ -124,11 +120,7 @@ def create_new_position(project_id: AnyStr, data: BaseModel, user: UserSchema):
     # Update position of project in database
     project.update_positions(position.id, is_add=True)
 
-    # Create new vector database collection
-    vector_db.create_collection(position.id)
-
     return position
-
 
 def update_current_position(project_id: AnyStr, position_id: AnyStr, data: BaseModel, user: UserSchema):
     '''
@@ -154,7 +146,6 @@ def update_current_position(project_id: AnyStr, position_id: AnyStr, data: BaseM
 
     # Update position in database
     position.update_position(data=data.model_dump(exclude_defaults=True))
-
 
 def update_status_current_position(project_id: AnyStr, position_id: AnyStr, user: UserSchema, is_closed: bool):
     '''
@@ -184,7 +175,6 @@ def update_status_current_position(project_id: AnyStr, position_id: AnyStr, user
     else:
         position.open_position()
 
-
 def delete_positions_by_ids(position_ids: list[AnyStr]):
     # Iterate over all positions id
     for position_id in position_ids:
@@ -193,15 +183,12 @@ def delete_positions_by_ids(position_ids: list[AnyStr]):
         if position:
             # Delete position
             position.delete_position()
-            # Delete vector database collection
-            vector_db.delete_collection(position_id)
             # Delete JD by Id
             jd_instance = JDSchema.find_by_id(position.jd)
             if jd_instance:
                 jd_instance.delete_jd()
             # Delete CVs by Ids
             delete_cvs_by_ids(position.cvs)
-
 
 def delete_current_position(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
     '''
@@ -230,9 +217,6 @@ def delete_current_position(project_id: AnyStr, position_id: AnyStr, user: UserS
 
     # Update position of project in database
     project.update_positions(position_id, is_add=False)
-
-    # Delete vector database collection
-    vector_db.delete_collection(position_id)
 
     # Delete JD by Id
     jd_instance = JDSchema.find_by_id(position.jd)

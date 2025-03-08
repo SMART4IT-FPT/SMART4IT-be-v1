@@ -3,7 +3,7 @@ import os
 import json
 from threading import Timer
 from ..utils.logger import log_cache
-
+from datetime import datetime
 
 class CacheProvider:
     def __init__(
@@ -21,8 +21,12 @@ class CacheProvider:
     def __load(self):
         # Load cache from file
         if os.path.exists(self.cache_path):
-            with open(self.cache_path, "r") as _file:
-                return json.load(_file)
+            try:
+                with open(self.cache_path, "r") as _file:
+                    return json.load(_file)
+            except json.JSONDecodeError:
+                log_cache("Cache file is corrupted. Resetting cache.")
+                return {}
         # Create cache file if it does not exist
         else:
             os.makedirs(os.path.dirname(self.cache_path), exist_ok=True)
@@ -31,9 +35,15 @@ class CacheProvider:
             return {}
 
     def __save(self):
+        # Convert non-serializable objects to strings
+        def default_converter(o):
+            if isinstance(o, datetime):
+                return o.isoformat()
+            raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
+
         # Save cache to file
         with open(self.cache_path, "w") as _file:
-            json.dump(self.cache, _file)
+            json.dump(self.cache, _file, default=default_converter)
             _file.close()
 
     def get(self, key: str) -> Any | None:

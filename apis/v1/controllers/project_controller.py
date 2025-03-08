@@ -13,7 +13,7 @@ def get_all_projects_by_ids(user: UserSchema, get_type: TypeGetAllProjects):
     Get all projects by the list of project ids.
     '''
     if get_type == "owned":
-        if len(user.projects) == 0:
+        if not user.projects or len(user.projects) == 0:
             return []
 
         projects = ProjectSchema.find_all_by_ids(user.projects)
@@ -23,7 +23,7 @@ def get_all_projects_by_ids(user: UserSchema, get_type: TypeGetAllProjects):
             project.members = get_all_users_by_ids(project.members, user)
 
     elif get_type == "shared":
-        if len(user.shared) == 0:
+        if not user.shared or len(user.shared) == 0:
             return []
 
         projects = ProjectSchema.find_all_by_ids(user.shared)
@@ -33,7 +33,7 @@ def get_all_projects_by_ids(user: UserSchema, get_type: TypeGetAllProjects):
             project.members = get_all_users_by_ids(project.members, user)
 
     elif get_type == "deleted":
-        if len(user.trash) == 0:
+        if not user.trash or len(user.trash) == 0:
             return []
 
         projects = ProjectSchema.find_all_by_ids(user.trash)
