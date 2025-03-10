@@ -21,5 +21,5 @@ async def get_jd(project_id: str, position_id: str, user: Annotated[UserSchema, 
 
 @router.put("/{project_id}/{position_id}", response_model=JDResponseInterface)
 async def update_jd(project_id: str, position_id: str, data: JDUpdateInterface, user: Annotated[UserSchema, Depends(get_current_user)]):
-    update_current_jd(project_id, position_id, data, user)
+    await update_current_jd(project_id, position_id, data, user)
     return jsonResponseFmt(None, "JD updated successfully")

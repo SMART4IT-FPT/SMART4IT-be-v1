@@ -50,14 +50,15 @@ class JDSchema:
         return JDSchema.from_dict(jd)
 
     def create_jd(self):
-        jd_id = jd_db.create(self.to_dict(include_id=False))
+        jd_id = jd_db.create(self.to_dict(include_id=False, minimal=True))
         self.id = jd_id
         return self
 
     def update_extraction(self, extraction: Dict[str, AnyStr]):
         self.extraction = extraction
         jd_db.update(self.id, {
-            "extraction": extraction
+            "summary": extraction.get("processed_text", ""),
+            "labels": extraction.get("classes", []),
         })
 
     def update_content(self, content: AnyStr):
