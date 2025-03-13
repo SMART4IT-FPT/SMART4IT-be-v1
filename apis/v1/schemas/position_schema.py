@@ -80,7 +80,7 @@ class PositionSchema:
             data_dict["cvs"] = self.cvs
             data_dict["question_banks"] = self.question_banks
             data_dict["criterias"] = [criteria.to_dict()
-                                      for criteria in self.criterias]
+                                    for criteria in self.criterias]
             data_dict["re_analyzing"] = self.re_analyzing
             data_dict["match_detail"] = self.match_detail
         if include_id:
@@ -121,6 +121,7 @@ class PositionSchema:
         '''
         position = position_db.get_by_id(position_id)
         return PositionSchema.from_dict(position)
+
 
     def create_position(self):
         position_id = position_db.create(self.to_dict(include_id=False))
@@ -188,3 +189,11 @@ class PositionSchema:
         Update match detail.
         '''
         self.update_position({"match_detail": detail})
+
+    def get_jd_by_cvs(self, cv_id: AnyStr):
+        """
+        Retrieve the Job Description (JD) based on the inputted CVs.
+        """
+        if cv_id in self.cvs:
+            return self.jd
+        return None 
