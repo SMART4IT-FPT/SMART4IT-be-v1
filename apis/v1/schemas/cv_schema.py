@@ -118,6 +118,18 @@ class CVSchema:
             "extraction": extraction
         })
 
+    def update_summary(self, summary: AnyStr):
+        self.summary = summary
+        cv_db.update(self.id, {
+            "summary": summary
+        })
+
+    def update_matching(self, matching: AnyStr):
+        self.matching = matching
+        cv_db.update(self.id, {
+            "matching": matching
+        })
+
     def download_content(self):
         try:
             return storage_db.download(self.path)
