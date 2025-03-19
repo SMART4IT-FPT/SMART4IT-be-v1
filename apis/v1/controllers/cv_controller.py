@@ -2,6 +2,8 @@ from typing import AnyStr
 from fastapi import UploadFile, HTTPException, status, BackgroundTasks
 import uuid
 import time
+import requests
+import httpx
 from ..schemas.user_schema import UserSchema
 from ..schemas.cv_schema import CVSchema
 from ..schemas.project_schema import ProjectSchema
@@ -13,7 +15,7 @@ from ..providers import memory_cacher, storage_db, llm
 from ..utils.extractor import get_cv_content
 from ..utils.prompt import system_prompt_cv, system_prompt_summary
 from ..utils.utils import validate_file_extension, get_content_type
-
+from fastapi.encoders import jsonable_encoder
 
 def _validate_permissions(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
     # Validate project id in user's projects
@@ -144,53 +146,95 @@ def _analyze_cv_data(content: AnyStr, watch_id: AnyStr, filename: AnyStr, cv: CV
             detail=f"Error extracting keywords. {str(e)}"
         )
 
+PROCESSING_API_URL = "http://localhost:8000/api/v1/process"
+MATCHING_API_URL = "http://localhost:8000/api/v1/match_cvs"
 
-def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: AnyStr, position: PositionSchema):
-    for cv, filename in zip(cvs, filenames):
-        memory_cacher.get(watch_id)["percent"][filename] = 0
-
-        # Create CV document in database
-        cv_instance = CVSchema(
-            name=filename,
-        ).create_cv()
-        memory_cacher.get(watch_id)["percent"][filename] += 10
-
-        # Upload to storage
+async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: AnyStr, position: PositionSchema):
+    cv_ids = []
+    async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            _upload_cv_data(
-                cv, filename, watch_id, cv_instance)
+            for cv, filename in zip(cvs, filenames):
+                memory_cacher.get(watch_id)["percent"][filename] = 0
+
+                # Create CV document in database
+                cv_instance = CVSchema(name=filename).create_cv()
+                cv_ids.append(cv_instance.id)
+                memory_cacher.get(watch_id)["percent"][filename] += 10
+
+                # Upload to storage
+                _upload_cv_data(cv, filename, watch_id, cv_instance)
+                memory_cacher.get(watch_id)["percent"][filename] += 10
+
+                # Save file to cache folder
+                cache_file_path = memory_cacher.save_cache_file(cv, filename)
+                cv_content = get_cv_content(cache_file_path)
+                memory_cacher.remove_cache_file(filename)
+                memory_cacher.get(watch_id)["percent"][filename] += 10
+
+                # Update content
+                cv_instance.update_content(cv_content)
+                memory_cacher.get(watch_id)["percent"][filename] += 10
+
+                # Update to position
+                position.update_cv(cv_instance.id, is_add=True)
+                memory_cacher.get(watch_id)["percent"][filename] += 10
+
+            # Send CV content to AI service for document processing
+            processing_payload = {
+                "doc_ids": cv_ids,
+                "doc_type": "cv",
+            }
+            response = await client.post(PROCESSING_API_URL, json=processing_payload)   # response schema: {"doc_type": "", "results": []}
+            processing_results = response.json().get("results")
+
+            for processing_result in processing_results:
+                cv_id  = processing_result.get("doc_id")
+                summary = processing_result.get("summary")
+                cv_instance = CVSchema.find_by_id(cv_id)
+                cv_instance.update_summary(summary)
+                memory_cacher.get(watch_id)["percent"][filename] = 100
+
+
         except Exception as e:
             memory_cacher.get(watch_id)["error"][filename] = str(e)
-            continue
+            memory_cacher.get(watch_id)["percent"][filename] = -1  # Mark as failed
+            raise RuntimeError(f"Process stopped due to error: {str(e)}")  # 🚨 STOP EVERYTHING
 
-        # Save file to cache folder
-        cache_file_path = memory_cacher.save_cache_file(cv, filename)
-        cv_content = get_cv_content(cache_file_path)
-        memory_cacher.remove_cache_file(filename)
-        memory_cacher.get(watch_id)["percent"][filename] += 5
+        # Perform Matching for all CVs at once
+        matching_payload = jsonable_encoder({
+            "jd_id": position.get_jd_by_cvs(cv_ids[0]),  # Pass the first CV ID as a string
+            "cv_ids": cv_ids,
+            "weight": {
+                "education_score_config": {"W_education_score": 0.05},
+                "language_score_config": {"W_language_score": 0.05},
+                "technical_score_config": {"W_technical_score": 0.35},
+                "experience_score_config": {
+                    "W_experience_score": 0.55,
+                    "relevance_score_w": 0.8,
+                    "difficulty_score_w": 0.15,
+                    "duration_score_w": 0.05
+                }
+            }
+        })
 
-        # Update content
-        cv_instance.update_content(cv_content)
-        memory_cacher.get(watch_id)["percent"][filename] += 5
+        response = await client.post(MATCHING_API_URL, json=matching_payload)       
+        matching_results = response.json().get("results")
+        print(matching_results)
+        
+        for matching_result in matching_results:
+            cv_id = matching_result.get("cv_id")
+            result = matching_result.get("matching_result")
+            cv_instance = CVSchema.find_by_id(cv_id)
+            cv_instance.update_matching(result)
+            # memory_cacher.get(watch_id)["percent"][cv_instance.name] += 20
 
-        # Analyze CV
-        try:
-            _analyze_cv_data(cv_content, watch_id, filename,
-                             cv_instance, position)
-        except Exception as e:
-            memory_cacher.get(watch_id)["error"][filename] = str(e)
-            continue
+        # Mark as completed
+        # for filename in filenames:
+        #     memory_cacher.get(watch_id)["percent"][filename] = 100
 
-        # Update to position
-        position.update_cv(cv_instance.id, is_add=True)
-        memory_cacher.get(watch_id)["percent"][filename] += 5
-
-    # Wait for 10 second to remove watch id
-    time.sleep(10)
-
-    # Delete cache file
-    memory_cacher.remove(watch_id)
-
+        # Wait for 10 seconds before cleanup
+        time.sleep(10)
+        memory_cacher.remove(watch_id)
 
 async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], bg_tasks: BackgroundTasks):
     # Validate permission
@@ -377,11 +421,11 @@ def delete_current_cv(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, us
     position.update_cv(cv_id, is_add=False)
 
     # Delete vectors
-    VectorEmbeddingSchema.from_query(
-        collection=position_id,
-        key="id",
-        value=cv_id
-    ).delete(position_id)
+    # VectorEmbeddingSchema.from_query(
+    #     collection=position_id,
+    #     key="id",
+    #     value=cv_id
+    # ).delete(position_id)
 
     # Delete CV
     cv.delete_cv()

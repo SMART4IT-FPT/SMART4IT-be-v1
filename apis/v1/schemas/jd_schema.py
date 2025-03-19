@@ -61,6 +61,11 @@ class JDSchema:
             "labels": extraction.get("classes", []),
         })
 
+    def update_summary(self, summary: AnyStr):
+        jd_db.update(self.id, {
+            "summary": summary
+        })
+
     def update_content(self, content: AnyStr):
         self.content = content
         jd_db.update(self.id, {

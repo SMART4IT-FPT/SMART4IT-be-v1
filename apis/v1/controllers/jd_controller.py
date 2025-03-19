@@ -68,16 +68,15 @@ def get_current_jd(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
 
 async def _analyse_jd_content(content: AnyStr, jd: JDSchema, position: PositionSchema):
     # Define the AI service API endpoint and payload
-    ai_service_url = "http://localhost:8000/api/v1/process"
-    payload = {
-        "doc_id": jd.id,
+    PROCESSING_API_URL = "http://localhost:8000/api/v1/process"
+    processing_payload = {
+        "doc_ids": [jd.id],
         "doc_type": "jd",
-        "text": content
     }
 
     # Call the AI service API
     async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(ai_service_url, json=payload)
+        response = await client.post(PROCESSING_API_URL, json=processing_payload)
 
     # Check for successful response
     if response.status_code != 200:
@@ -87,10 +86,11 @@ async def _analyse_jd_content(content: AnyStr, jd: JDSchema, position: PositionS
         )
 
     # Parse the response
-    extraction = response.json()
+    processing_result = response.json().get("results")
+    summary = processing_result[0].get("summary")
 
     # Update JD extraction
-    jd.update_extraction(extraction)
+    jd.update_summary(summary)
 
 
 async def _upload_jd_content(content: AnyStr, position: PositionSchema):
