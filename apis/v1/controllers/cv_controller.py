@@ -8,12 +8,9 @@ from ..schemas.user_schema import UserSchema
 from ..schemas.cv_schema import CVSchema
 from ..schemas.project_schema import ProjectSchema
 from ..schemas.position_schema import PositionSchema
-from ..schemas.embedding_schema import VectorEmbeddingSchema
 from ..schemas.criteria_schema import CriteriaSchema
-from ..schemas.jd_schema import JDSchema
-from ..providers import memory_cacher, storage_db, llm
+from ..providers import memory_cacher, storage_db
 from ..utils.extractor import get_cv_content
-from ..utils.prompt import system_prompt_cv, system_prompt_summary
 from ..utils.utils import validate_file_extension, get_content_type
 from fastapi.encoders import jsonable_encoder
 
@@ -104,47 +101,6 @@ def _validate_llm_extraction(extraction: dict, criterias: list[CriteriaSchema]) 
             filtered_extraction[key] = value
 
     return filtered_extraction
-
-
-def _analyze_cv_data(content: AnyStr, watch_id: AnyStr, filename: AnyStr, cv: CVSchema, position: PositionSchema):
-    # Generate content
-    generator = llm.construct(position.criterias)
-    extraction = generator.generate(system_prompt_cv, content)
-    extraction = _validate_llm_extraction(extraction, position.criterias)
-    memory_cacher.get(watch_id)["percent"][filename] += 25
-
-    # Update extraction
-    cv.update_extraction(extraction)
-    memory_cacher.get(watch_id)["percent"][filename] += 5
-
-    # Extract keywords
-    criteria_names = [criteria.name for criteria in position.criterias]
-    try:
-        for key, value in extraction.items():
-            # Check key in criterias
-            if key not in criteria_names:
-                continue
-
-            # Get vectors and payloads
-            payloads = []
-            values = []
-            for keyword, score in value.items():
-                payloads.append({
-                    "id": cv.id,
-                    "score": score,
-                })
-                values.append(keyword)
-            vectors = VectorEmbeddingSchema.from_documents(values, payloads)
-
-            # Upload to vector database
-            vectors.upload(position.id, f"cv_{key}")
-        memory_cacher.get(watch_id)["percent"][filename] += 25
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting keywords. {str(e)}"
-        )
 
 PROCESSING_API_URL = "http://localhost:8000/api/v1/process"
 MATCHING_API_URL = "http://localhost:8000/api/v1/match_cvs"
@@ -338,46 +294,6 @@ async def download_cv_content(project_id: AnyStr, position_id: AnyStr, cv_id: An
         )
 
     return cv_content
-
-
-def get_cv_summary_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
-    # Validate permission
-    _, position = _validate_permissions(project_id, position_id, user)
-
-    if cv_id not in position.cvs:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to access this CV."
-        )
-
-    # Get CV
-    cv = CVSchema.find_by_id(cv_id)
-    if not cv:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="CV not found."
-        )
-
-    # Get JD
-    jd = JDSchema.find_by_id(position.jd)
-    if not jd:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="JD not found."
-        )
-
-    # Create content to prompt
-    prompt_content = f"JD: {jd.content}\nCV: {cv.content}"
-
-    # Generate summary
-    generator = llm.native_contruct()
-    generated_content = generator.generate(
-        system_prompt_summary, prompt_content)
-
-    # Update summary to CV
-    cv.update_summary(generated_content.content)
-
-    return generated_content.content
 
 
 def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
