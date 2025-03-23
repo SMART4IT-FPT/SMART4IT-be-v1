@@ -4,10 +4,8 @@ from fastapi import HTTPException, status
 from ..schemas.user_schema import UserSchema
 from ..schemas.project_schema import ProjectSchema
 from ..schemas.position_schema import PositionSchema
-from ..schemas.criteria_schema import CriteriaSchema
 from ..schemas.jd_schema import JDSchema
 from ..controllers.cv_controller import delete_cvs_by_ids
-# from ..providers import vector_db
 
 
 def _validate_permissions(project_id: AnyStr, user: UserSchema):
@@ -110,11 +108,8 @@ def create_new_position(project_id: AnyStr, data: BaseModel, user: UserSchema):
         description=data.description,
         start_date=data.start_date,
         end_date=data.end_date,
-        criterias=[CriteriaSchema.from_dict(
-            criteria) for criteria in data.criterias],
         cvs=[],
         jd="",
-        question_banks=[]
     ).create_position()
 
     # Update position of project in database

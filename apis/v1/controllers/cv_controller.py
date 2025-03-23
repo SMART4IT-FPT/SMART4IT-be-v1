@@ -8,7 +8,7 @@ from ..schemas.user_schema import UserSchema
 from ..schemas.cv_schema import CVSchema
 from ..schemas.project_schema import ProjectSchema
 from ..schemas.position_schema import PositionSchema
-from ..schemas.criteria_schema import CriteriaSchema
+# from ..schemas.criteria_schema import CriteriaSchema
 from ..providers import memory_cacher, storage_db
 from ..utils.extractor import get_cv_content
 from ..utils.utils import validate_file_extension, get_content_type
@@ -78,29 +78,6 @@ def _upload_cv_data(data: bytes, filename: AnyStr, watch_id: AnyStr, cv: CVSchem
     cv.update_path_url(path, url)
     memory_cacher.get(watch_id)["percent"][filename] += 5
 
-
-def _validate_llm_extraction(extraction: dict, criterias: list[CriteriaSchema]) -> dict:
-    '''
-    Sometimes, the extraction from LLM model may contain unwanted keywords.\n
-    This function will filter out the unwanted keywords from the extraction.
-    '''
-    # Get criteria names
-    criteria_names = [criteria.name for criteria in criterias]
-
-    # If there is a field `properties` in the extraction, extract the keywords from it
-    if "properties" in extraction:
-        if isinstance(extraction["properties"], dict):
-            for key, value in extraction["properties"].items():
-                if key in criteria_names:
-                    extraction[key] = value
-
-    # Filter out unwanted keywords
-    filtered_extraction = {}
-    for key, value in extraction.items():
-        if key in criteria_names:
-            filtered_extraction[key] = value
-
-    return filtered_extraction
 
 PROCESSING_API_URL = "http://localhost:8000/api/v1/process"
 MATCHING_API_URL = "http://localhost:8000/api/v1/match_cvs"
@@ -175,7 +152,6 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
 
         response = await client.post(MATCHING_API_URL, json=matching_payload)       
         matching_results = response.json().get("results")
-        print(matching_results)
         
         for matching_result in matching_results:
             cv_id = matching_result.get("cv_id")
@@ -195,13 +171,6 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
 async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], bg_tasks: BackgroundTasks):
     # Validate permission
     _, position = _validate_permissions(project_id, position_id, user)
-
-    # Validate criterias
-    if len(position.criterias) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No criteria to analyze."
-        )
 
     # Create watch id
     watch_id = str(uuid.uuid4())
