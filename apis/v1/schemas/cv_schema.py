@@ -41,6 +41,7 @@ class CVSchema:
         url: AnyStr = "",
         # score: ScoreSchema = ScoreSchema(),
         # extraction: Dict[str, AnyStr] = {},
+        matching: AnyStr = "",
         summary: AnyStr = "",
         content: AnyStr = "",
         status: CVStatus = CVStatus.applying,
@@ -52,6 +53,7 @@ class CVSchema:
         self.url = url
         # self.score = score
         # self.extraction = extraction
+        self.matching = matching
         self.summary = summary
         self.content = content
         self.status = status
@@ -64,6 +66,7 @@ class CVSchema:
             "url": self.url,
             # "score": self.score.to_dict(),
             # "extraction": self.extraction,
+            "matching": self.matching,
             "summary": self.summary,
             "content": self.content,
             "status": self.status.value,
@@ -82,6 +85,7 @@ class CVSchema:
             url=data.get("url"),
             # score=ScoreSchema.from_dict(data.get("score")),
             # extraction=data.get("extraction"),
+            matching=data.get("matching"),
             summary=data.get("summary"),
             content=data.get("content"),
             status=CVStatus(data.get("status")),

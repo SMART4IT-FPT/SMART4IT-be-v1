@@ -265,22 +265,40 @@ async def download_cv_content(project_id: AnyStr, position_id: AnyStr, cv_id: An
     return cv_content
 
 
+# def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
+#     # Validate permission
+#     _, position = _validate_permissions(project_id, position_id, user)
+
+#     # Get Match detail from position
+#     match_detail = position.match_detail
+
+#     # Format detail
+#     fmt_detail = {}
+#     for cri, cri_v in match_detail.items():
+#         for jdw, jdw_v in cri_v["detail"].items():
+#             if cv_id in jdw_v:
+#                 fmt_detail[f"{cri}:{jdw}"] = jdw_v[cv_id]["detail"]
+#                 fmt_detail[f"{cri}:{jdw}"]["overall"] = jdw_v[cv_id]["overall"]
+
+#     return fmt_detail
+
 def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
-    # Validate permission
-    _, position = _validate_permissions(project_id, position_id, user)
+    _, _ = _validate_permissions(project_id, position_id, user)
 
-    # Get Match detail from position
-    match_detail = position.match_detail
-
-    # Format detail
-    fmt_detail = {}
-    for cri, cri_v in match_detail.items():
-        for jdw, jdw_v in cri_v["detail"].items():
-            if cv_id in jdw_v:
-                fmt_detail[f"{cri}:{jdw}"] = jdw_v[cv_id]["detail"]
-                fmt_detail[f"{cri}:{jdw}"]["overall"] = jdw_v[cv_id]["overall"]
-
-    return fmt_detail
+    # Get CV
+    cv = CVSchema.find_by_id(cv_id)
+    # Return CV' 'detail' and 'matching' keys of the cv
+    cv_summary = cv.to_dict().get('summary')
+    print(cv_summary)
+    cv_matching = cv.to_dict().get('matching')
+    print(cv_matching)
+    cv = { 'summary': cv_summary, 'matching': cv_matching }
+    if not cv:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="CV not found"
+        )
+    return cv
 
 
 def delete_cvs_by_ids(cv_ids: list[AnyStr]):
