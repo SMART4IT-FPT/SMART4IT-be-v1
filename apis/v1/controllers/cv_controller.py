@@ -138,14 +138,29 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
             "jd_id": position.get_jd_by_cvs(cv_ids[0]),  # Pass the first CV ID as a string
             "cv_ids": cv_ids,
             "weight": {
-                "education_score_config": {"W_education_score": 0.05},
-                "language_score_config": {"W_language_score": 0.05},
-                "technical_score_config": {"W_technical_score": 0.35},
-                "experience_score_config": {
-                    "W_experience_score": 0.55,
-                    "relevance_score_w": 0.8,
-                    "difficulty_score_w": 0.15,
-                    "duration_score_w": 0.05
+                "education_score_config": {
+                    "W_education_score": 0.05
+                },
+                "language_skills_score_config": {
+                    "W_language_skills_score": 0.1
+                },
+                "technical_skills_score_config": {
+                    "W_technical_skills_score": 0.25
+                },
+                "work_experience_score_config": {
+                    "W_work_experience_score": 0.1,
+                    "relevance_score_w": 0.6,
+                    "duration_score_w": 0.2,
+                    "responsibilities_score_w": 0.2
+                },
+                "personal_projects_score_config": {
+                    "W_personal_projects_score": 0.4,
+                    "relevance_score_w": 0.6,
+                    "technologies_score_w": 0.2,
+                    "responsibilities_score_w": 0.2
+                },
+                "publications_score_config": {
+                    "W_publications_score": 0.1,
                 }
             }
         })
