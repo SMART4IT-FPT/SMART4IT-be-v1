@@ -123,6 +123,12 @@ class CVSchema:
             "summary": summary
         })
 
+    def update_labels(self, labels: AnyStr):
+        self.summary = labels
+        cv_db.update(self.id, {
+            "labels": labels
+        })
+
     def update_matching(self, matching: AnyStr):
         self.matching = matching
         cv_db.update(self.id, {
