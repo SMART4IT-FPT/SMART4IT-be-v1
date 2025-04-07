@@ -24,6 +24,7 @@ class CVModel(BaseModel):
     # extraction: dict = Field({}, title="CV Extraction")
     summary: str = Field("", title="CV Summary")
     content: str = Field("", title="CV Content")
+    labels: list = Field([], title="CV Labels")
     status: CVStatus = Field(CVStatus.applying, title="CV Status")
     upload_at: str = Field("", title="CV Upload At")
 
@@ -44,6 +45,7 @@ class CVSchema:
         matching: AnyStr = "",
         summary: AnyStr = "",
         content: AnyStr = "",
+        labels: list = [],
         status: CVStatus = CVStatus.applying,
         upload_at: AnyStr = get_current_time()
     ):
@@ -56,6 +58,7 @@ class CVSchema:
         self.matching = matching
         self.summary = summary
         self.content = content
+        self.labels = labels
         self.status = status
         self.upload_at = upload_at
 
@@ -69,6 +72,7 @@ class CVSchema:
             "matching": self.matching,
             "summary": self.summary,
             "content": self.content,
+            "labels": self.labels,
             "status": self.status.value,
             "upload_at": self.upload_at
         }
@@ -88,6 +92,7 @@ class CVSchema:
             matching=data.get("matching"),
             summary=data.get("summary"),
             content=data.get("content"),
+            labels=data.get("labels"),
             status=CVStatus(data.get("status")),
             upload_at=data.get("upload_at")
         )

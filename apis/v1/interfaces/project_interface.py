@@ -20,6 +20,7 @@ class CreateProjectInterface(BaseModel):
     name: str = Field(..., title="Project Name")
     alias: str = Field(..., title="Project Alias")
     description: str = Field(None, title="Project Description")
+    created_at: str = Field(None, title="Project Created At")
 
 
 class UpdateProjectInterface(BaseModel):

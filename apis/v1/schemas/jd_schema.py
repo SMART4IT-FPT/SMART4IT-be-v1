@@ -18,7 +18,7 @@ class JDSchema:
         self,
         jd_id: AnyStr = None,
         content: AnyStr = "",
-        extraction: Dict[str, AnyStr] = {}
+        # extraction: Dict[str, AnyStr] = {}
     ):
         self.id = jd_id
         self.content = content

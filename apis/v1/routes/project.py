@@ -3,12 +3,13 @@ from fastapi import APIRouter, Depends
 from ..interfaces.project_interface import (
     ProjectsResponseInterface,
     ProjectResponseInterface,
-    TypeGetAllProjects,
+    # TypeGetAllProjects,
     CreateProjectInterface,
     UpdateProjectInterface,
     UpdateLastOpenedProjectInterface,
     UpdateMemberProjectInterface
 )
+from ..interfaces.project_member_interface import TypeGetAllRoles
 from ..schemas.user_schema import UserSchema
 from ..middlewares.auth_middleware import get_current_user
 from ..controllers.project_controller import (
@@ -27,7 +28,7 @@ router = APIRouter(prefix="/project", tags=["Project"])
 
 
 @router.get("/", response_model=ProjectsResponseInterface)
-async def get_projects(user: Annotated[UserSchema, Depends(get_current_user)], get_type: TypeGetAllProjects = "owned"):
+async def get_projects(user: Annotated[UserSchema, Depends(get_current_user)], get_type: TypeGetAllRoles = "OWNER"):
     projects = get_all_projects_by_ids(user, get_type)
     return jsonResponseFmt([project.to_dict(include_id=True) for project in projects], f"Get {get_type} projects successfully")
 
@@ -41,7 +42,7 @@ async def get_project(project_id: AnyStr, user: Annotated[UserSchema, Depends(ge
 @router.post("/", response_model=ProjectResponseInterface)
 async def create_project(data: CreateProjectInterface, user: Annotated[UserSchema, Depends(get_current_user)]):
     project = create_new_project(data, user)
-    return jsonResponseFmt(project.to_dict(include_id=True), f"Project {project.id} created successfully")
+    return jsonResponseFmt(project.to_dict(include_id=True), f"Project {project.project_id} created successfully")
 
 
 @router.put("/{project_id}", response_model=ProjectResponseInterface)

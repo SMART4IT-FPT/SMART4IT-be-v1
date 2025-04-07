@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from ..schemas.user_schema import UserSchema
 from ..schemas.project_schema import ProjectSchema
 from ..schemas.position_schema import PositionSchema
+from ..schemas.project_member_schema import ProjectMemberSchema
 from ..schemas.jd_schema import JDSchema
 from ..controllers.cv_controller import delete_cvs_by_ids
 
@@ -12,7 +13,10 @@ def _validate_permissions(project_id: AnyStr, user: UserSchema):
     '''
     Validate if user has access to the project.
     '''
-    if project_id not in user.projects and project_id not in user.shared:
+    project_members = ProjectMemberSchema.find_by_project_id(project_id)
+    print(project_members.user_id, user.user_id)
+
+    if user.id != project_members.user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You don't have access to this project."

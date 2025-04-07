@@ -3,50 +3,48 @@ from pydantic import BaseModel
 from fastapi import HTTPException, status
 from .user_controller import get_all_users_by_ids
 from .position_controller import delete_positions_by_ids
-from ..interfaces.project_interface import TypeGetAllProjects
+# from ..interfaces.project_interface import TypeGetAllProjects
+from ..interfaces.project_member_interface import TypeGetAllRoles
 from ..schemas.user_schema import UserSchema
 from ..schemas.project_schema import ProjectSchema
+from ..schemas.project_member_schema import ProjectMemberSchema  # Import ProjectMemberSchema
+from ..utils.utils import get_current_time
 
 
-def get_all_projects_by_ids(user: UserSchema, get_type: TypeGetAllProjects):
+def get_all_projects_by_ids(user: UserSchema, get_type: TypeGetAllRoles):
     '''
     Get all projects by the list of project ids.
     '''
-    if get_type == "owned":
-        if not user.projects or len(user.projects) == 0:
-            return []
-
-        projects = ProjectSchema.find_all_by_ids(user.projects)
+    if get_type == "OWNER":        
+        projects = ProjectMemberSchema.get_owned_projects_by_user_id(user.user_id)
 
         # Fetch member data for each project
         for project in projects:
             project.members = get_all_users_by_ids(project.members, user)
 
-    elif get_type == "shared":
-        if not user.shared or len(user.shared) == 0:
-            return []
-
-        projects = ProjectSchema.find_all_by_ids(user.shared)
+    elif get_type == "RECRUITER":
+        projects = ProjectMemberSchema.get_shared_projects_by_user_id(user.user_id)
 
         # Fetch member data for each project
         for project in projects:
             project.members = get_all_users_by_ids(project.members, user)
 
-    elif get_type == "deleted":
-        if not user.trash or len(user.trash) == 0:
-            return []
+    # elif get_type == "deleted":
+    #     if not user.trash or len(user.trash) == 0:
+    #         return []
 
-        projects = ProjectSchema.find_all_by_ids(user.trash)
+    #     projects = ProjectSchema.find_all_by_ids(user.trash)
 
-        # Fetch member data for each project
-        for project in projects:
-            project.members = get_all_users_by_ids(project.members, user)
+    #     # Fetch member data for each project
+    #     for project in projects:
+    #         project.members = get_all_users_by_ids(project.members, user)
 
     else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid get type",
-        )
+        # raise HTTPException(
+        #     status_code=status.HTTP_400_BAD_REQUEST,
+        #     detail="Invalid get type",
+        # )
+        pass
 
     return projects
 
@@ -108,15 +106,17 @@ def create_new_project(data: Dict, user: UserSchema):
     '''
     # Create new project in database
     project = ProjectSchema(
-        name=data.name,
-        alias=data.alias,
-        description=data.description,
-        owner=user.id,
-        positions=[]
+        project_name=data.name,
+        project_alias=data.alias,
+        project_description=data.description,
     ).create_project()
 
-    # Update user in database
-    user.update_user_projects(project.id, is_add=True)
+    # Create new project member in database
+    ProjectMemberSchema(
+        project_id=project.project_id,
+        user_id=user.user_id,
+        role="OWNER",
+    ).create_user_project()
 
     return project
 

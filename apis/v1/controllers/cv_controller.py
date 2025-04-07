@@ -306,9 +306,7 @@ def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr
     cv = CVSchema.find_by_id(cv_id)
     # Return CV' 'detail' and 'matching' keys of the cv
     cv_summary = cv.to_dict().get('summary')
-    print(cv_summary)
     cv_matching = cv.to_dict().get('matching')
-    print(cv_matching)
     cv = { 'summary': cv_summary, 'matching': cv_matching }
     if not cv:
         raise HTTPException(
