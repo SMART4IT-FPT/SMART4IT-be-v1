@@ -5,7 +5,7 @@ from ..providers import project_member_db
 from ..schemas.project_schema import ProjectSchema  # Import ProjectSchema
 
 
-class UserRole(enum.Enum):
+class UserRole():
     owner = "OWNER"
     recruiter = "RECRUITER"
 

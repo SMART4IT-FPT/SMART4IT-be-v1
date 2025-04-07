@@ -14,7 +14,6 @@ def _validate_permissions(project_id: AnyStr, user: UserSchema):
     Validate if user has access to the project.
     '''
     project_members = ProjectMemberSchema.find_by_project_id(project_id)
-    print(project_members.user_id, user.user_id)
 
     if user.id != project_members.user_id:
         raise HTTPException(
