@@ -44,6 +44,7 @@ class CVSchema:
         matching: AnyStr = "",
         summary: AnyStr = "",
         content: AnyStr = "",
+        labels: list[AnyStr] = [],
         status: CVStatus = CVStatus.applying,
         upload_at: AnyStr = get_current_time()
     ):
@@ -56,6 +57,7 @@ class CVSchema:
         self.matching = matching
         self.summary = summary
         self.content = content
+        self.labels = labels
         self.status = status
         self.upload_at = upload_at
 
@@ -69,6 +71,7 @@ class CVSchema:
             "matching": self.matching,
             "summary": self.summary,
             "content": self.content,
+            "labels": self.labels,
             "status": self.status.value,
             "upload_at": self.upload_at
         }
@@ -88,6 +91,7 @@ class CVSchema:
             matching=data.get("matching"),
             summary=data.get("summary"),
             content=data.get("content"),
+            labels=data.get("labels"),
             status=CVStatus(data.get("status")),
             upload_at=data.get("upload_at")
         )

@@ -117,13 +117,13 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
                 "doc_ids": cv_ids,
                 "doc_type": "cv",
             }
-            response = await client.post(PROCESSING_API_URL, json=processing_payload)   # response schema: {"doc_type": "", "results": []}
+            response = await client.post(PROCESSING_API_URL, json=processing_payload, timeout=len(cv_ids)*120)   # response schema: {"doc_type": "", "results": []}
             processing_results = response.json().get("results")
 
             for processing_result in processing_results:
                 cv_id  = processing_result.get("doc_id")
                 summary = processing_result.get("summary")
-                labels = processing_result.get("class")
+                labels = processing_result.get("labels")
                 cv_instance = CVSchema.find_by_id(cv_id)
                 cv_instance.update_summary(summary)
                 cv_instance.update_labels(labels)
