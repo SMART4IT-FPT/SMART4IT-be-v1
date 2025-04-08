@@ -7,7 +7,6 @@ from ..interfaces.cv_interface import (
     UploadCVInterface,
     CVsResponseInterface,
     CVResponseInterface,
-    CVSummaryResponseInterface,
     CVUploadProgressInterface,
     CVUploadResponseInterface,
     CVDetailResponseInterface
@@ -20,7 +19,7 @@ from ..controllers.cv_controller import (
     upload_cv_data,
     get_upload_progress,
     download_cv_content,
-    get_cv_summary_control,
+    # get_cv_summary_control,
     get_cv_detail_control,
     delete_current_cv
 )
@@ -74,12 +73,6 @@ async def get_progress(watch_id: str):
 async def download_cv(project_id: str, position_id: str, cv_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
     cv_content = await download_cv_content(project_id, position_id, cv_id, user)
     return StreamingResponse(BytesIO(cv_content), media_type="application/octet-stream", headers={"Content-Disposition": f"attachment; filename={cv_id}.pdf"})
-
-
-@router.get("/{project_id}/{position_id}/{cv_id}/summary", response_model=CVSummaryResponseInterface)
-async def ai_summary_cv(project_id: str, position_id: str, cv_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
-    cv_summary = get_cv_summary_control(project_id, position_id, cv_id, user)
-    return jsonResponseFmt(cv_summary)
 
 
 @router.get("/{project_id}/{position_id}/{cv_id}/detail", response_model=CVDetailResponseInterface)

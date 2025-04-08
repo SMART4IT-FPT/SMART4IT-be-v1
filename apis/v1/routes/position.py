@@ -6,7 +6,6 @@ from ..interfaces.position_interface import (
     UpdatePositionInterface,
     PositionsResponseInterface,
     PositionResponseInterface,
-    UpdateCriteriaInterface,
     PublicPositionInterface
 )
 from ..middlewares.auth_middleware import get_current_user
@@ -53,12 +52,6 @@ async def create_position(project_id: str, data: CreatePositionInterface, user: 
 async def update_position(project_id: str, position_id: str, data: UpdatePositionInterface, user: Annotated[UserSchema, Depends(get_current_user)]):
     update_current_position(project_id, position_id, data, user)
     return jsonResponseFmt(None, f"Update position with id {position_id} successfully")
-
-
-@router.put("/{project_id}/criteria/{position_id}", response_model=PositionResponseInterface)
-async def update_position_criteria(project_id: str, position_id: str, data: UpdateCriteriaInterface, user: Annotated[UserSchema, Depends(get_current_user)]):
-    update_current_position(project_id, position_id, data, user)
-    return jsonResponseFmt(None, f"Update position criteria with id {position_id} successfully")
 
 
 @router.put("/{project_id}/close/{position_id}", response_model=PositionResponseInterface)

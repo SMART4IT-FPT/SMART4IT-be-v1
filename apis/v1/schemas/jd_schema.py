@@ -22,14 +22,15 @@ class JDSchema:
     ):
         self.id = jd_id
         self.content = content
-        self.extraction = extraction
+        # self.extraction = extraction
 
     def to_dict(self, include_id=True, minimal=False):
         data_dict = {
             "content": self.content
         }
         if not minimal:
-            data_dict["extraction"] = self.extraction
+            pass
+            # data_dict["extraction"] = self.extraction
         if include_id:
             data_dict["id"] = self.id
         return data_dict
@@ -39,7 +40,7 @@ class JDSchema:
         return JDSchema(
             jd_id=data.get("id"),
             content=data.get("content"),
-            extraction=data.get("extraction")
+            # extraction=data.get("extraction")
         )
 
     @staticmethod
@@ -54,12 +55,12 @@ class JDSchema:
         self.id = jd_id
         return self
 
-    def update_extraction(self, extraction: Dict[str, AnyStr]):
-        self.extraction = extraction
-        jd_db.update(self.id, {
-            "summary": extraction.get("processed_text", ""),
-            "labels": extraction.get("classes", []),
-        })
+    # def update_extraction(self, extraction: Dict[str, AnyStr]):
+    #     self.extraction = extraction
+    #     jd_db.update(self.id, {
+    #         "summary": extraction.get("processed_text", ""),
+    #         "labels": extraction.get("classes", []),
+    #     })
 
     def update_summary(self, summary: AnyStr):
         jd_db.update(self.id, {

@@ -132,3 +132,8 @@ cython_debug/
 keys/
 cache/*
 __cache__.json
+
+
+.vscode/
+
+*.json

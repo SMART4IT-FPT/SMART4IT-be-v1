@@ -8,12 +8,9 @@ from ..schemas.user_schema import UserSchema
 from ..schemas.cv_schema import CVSchema
 from ..schemas.project_schema import ProjectSchema
 from ..schemas.position_schema import PositionSchema
-from ..schemas.embedding_schema import VectorEmbeddingSchema
-from ..schemas.criteria_schema import CriteriaSchema
-from ..schemas.jd_schema import JDSchema
-from ..providers import memory_cacher, storage_db, llm
+# from ..schemas.criteria_schema import CriteriaSchema
+from ..providers import memory_cacher, storage_db
 from ..utils.extractor import get_cv_content
-from ..utils.prompt import system_prompt_cv, system_prompt_summary
 from ..utils.utils import validate_file_extension, get_content_type
 from fastapi.encoders import jsonable_encoder
 
@@ -82,70 +79,6 @@ def _upload_cv_data(data: bytes, filename: AnyStr, watch_id: AnyStr, cv: CVSchem
     memory_cacher.get(watch_id)["percent"][filename] += 5
 
 
-def _validate_llm_extraction(extraction: dict, criterias: list[CriteriaSchema]) -> dict:
-    '''
-    Sometimes, the extraction from LLM model may contain unwanted keywords.\n
-    This function will filter out the unwanted keywords from the extraction.
-    '''
-    # Get criteria names
-    criteria_names = [criteria.name for criteria in criterias]
-
-    # If there is a field `properties` in the extraction, extract the keywords from it
-    if "properties" in extraction:
-        if isinstance(extraction["properties"], dict):
-            for key, value in extraction["properties"].items():
-                if key in criteria_names:
-                    extraction[key] = value
-
-    # Filter out unwanted keywords
-    filtered_extraction = {}
-    for key, value in extraction.items():
-        if key in criteria_names:
-            filtered_extraction[key] = value
-
-    return filtered_extraction
-
-
-def _analyze_cv_data(content: AnyStr, watch_id: AnyStr, filename: AnyStr, cv: CVSchema, position: PositionSchema):
-    # Generate content
-    generator = llm.construct(position.criterias)
-    extraction = generator.generate(system_prompt_cv, content)
-    extraction = _validate_llm_extraction(extraction, position.criterias)
-    memory_cacher.get(watch_id)["percent"][filename] += 25
-
-    # Update extraction
-    cv.update_extraction(extraction)
-    memory_cacher.get(watch_id)["percent"][filename] += 5
-
-    # Extract keywords
-    criteria_names = [criteria.name for criteria in position.criterias]
-    try:
-        for key, value in extraction.items():
-            # Check key in criterias
-            if key not in criteria_names:
-                continue
-
-            # Get vectors and payloads
-            payloads = []
-            values = []
-            for keyword, score in value.items():
-                payloads.append({
-                    "id": cv.id,
-                    "score": score,
-                })
-                values.append(keyword)
-            vectors = VectorEmbeddingSchema.from_documents(values, payloads)
-
-            # Upload to vector database
-            vectors.upload(position.id, f"cv_{key}")
-        memory_cacher.get(watch_id)["percent"][filename] += 25
-
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error extracting keywords. {str(e)}"
-        )
-
 PROCESSING_API_URL = "http://localhost:8000/api/v1/process"
 MATCHING_API_URL = "http://localhost:8000/api/v1/match_cvs"
 
@@ -184,14 +117,16 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
                 "doc_ids": cv_ids,
                 "doc_type": "cv",
             }
-            response = await client.post(PROCESSING_API_URL, json=processing_payload)   # response schema: {"doc_type": "", "results": []}
+            response = await client.post(PROCESSING_API_URL, json=processing_payload, timeout=len(cv_ids)*120)   # response schema: {"doc_type": "", "results": []}
             processing_results = response.json().get("results")
 
             for processing_result in processing_results:
                 cv_id  = processing_result.get("doc_id")
                 summary = processing_result.get("summary")
+                labels = processing_result.get("labels")
                 cv_instance = CVSchema.find_by_id(cv_id)
                 cv_instance.update_summary(summary)
+                cv_instance.update_labels(labels)
                 memory_cacher.get(watch_id)["percent"][filename] = 100
 
 
@@ -205,21 +140,35 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
             "jd_id": position.get_jd_by_cvs(cv_ids[0]),  # Pass the first CV ID as a string
             "cv_ids": cv_ids,
             "weight": {
-                "education_score_config": {"W_education_score": 0.05},
-                "language_score_config": {"W_language_score": 0.05},
-                "technical_score_config": {"W_technical_score": 0.35},
-                "experience_score_config": {
-                    "W_experience_score": 0.55,
-                    "relevance_score_w": 0.8,
-                    "difficulty_score_w": 0.15,
-                    "duration_score_w": 0.05
+                "education_score_config": {
+                    "W_education_score": 0.05
+                },
+                "language_skills_score_config": {
+                    "W_language_skills_score": 0.1
+                },
+                "technical_skills_score_config": {
+                    "W_technical_skills_score": 0.3
+                },
+                "work_experience_score_config": {
+                    "W_work_experience_score": 0.4,
+                    "relevance_score_w": 0.6,
+                    "duration_score_w": 0.2,
+                    "responsibilities_score_w": 0.2
+                },
+                "personal_projects_score_config": {
+                    "W_personal_projects_score": 0.2,
+                    "relevance_score_w": 0.6,
+                    "technologies_score_w": 0.2,
+                    "responsibilities_score_w": 0.2
+                },
+                "publications_score_config": {
+                    "W_publications_score": 0.05,
                 }
             }
         })
 
         response = await client.post(MATCHING_API_URL, json=matching_payload)       
         matching_results = response.json().get("results")
-        print(matching_results)
         
         for matching_result in matching_results:
             cv_id = matching_result.get("cv_id")
@@ -239,13 +188,6 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
 async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], bg_tasks: BackgroundTasks):
     # Validate permission
     _, position = _validate_permissions(project_id, position_id, user)
-
-    # Validate criterias
-    if len(position.criterias) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No criteria to analyze."
-        )
 
     # Create watch id
     watch_id = str(uuid.uuid4())
@@ -340,62 +282,40 @@ async def download_cv_content(project_id: AnyStr, position_id: AnyStr, cv_id: An
     return cv_content
 
 
-def get_cv_summary_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
-    # Validate permission
-    _, position = _validate_permissions(project_id, position_id, user)
+# def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
+#     # Validate permission
+#     _, position = _validate_permissions(project_id, position_id, user)
 
-    if cv_id not in position.cvs:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to access this CV."
-        )
+#     # Get Match detail from position
+#     match_detail = position.match_detail
+
+#     # Format detail
+#     fmt_detail = {}
+#     for cri, cri_v in match_detail.items():
+#         for jdw, jdw_v in cri_v["detail"].items():
+#             if cv_id in jdw_v:
+#                 fmt_detail[f"{cri}:{jdw}"] = jdw_v[cv_id]["detail"]
+#                 fmt_detail[f"{cri}:{jdw}"]["overall"] = jdw_v[cv_id]["overall"]
+
+#     return fmt_detail
+
+def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
+    _, _ = _validate_permissions(project_id, position_id, user)
 
     # Get CV
     cv = CVSchema.find_by_id(cv_id)
+    # Return CV' 'detail' and 'matching' keys of the cv
+    cv_summary = cv.to_dict().get('summary')
+    print(cv_summary)
+    cv_matching = cv.to_dict().get('matching')
+    print(cv_matching)
+    cv = { 'summary': cv_summary, 'matching': cv_matching }
     if not cv:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="CV not found."
+            detail="CV not found"
         )
-
-    # Get JD
-    jd = JDSchema.find_by_id(position.jd)
-    if not jd:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="JD not found."
-        )
-
-    # Create content to prompt
-    prompt_content = f"JD: {jd.content}\nCV: {cv.content}"
-
-    # Generate summary
-    generator = llm.native_contruct()
-    generated_content = generator.generate(
-        system_prompt_summary, prompt_content)
-
-    # Update summary to CV
-    cv.update_summary(generated_content.content)
-
-    return generated_content.content
-
-
-def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
-    # Validate permission
-    _, position = _validate_permissions(project_id, position_id, user)
-
-    # Get Match detail from position
-    match_detail = position.match_detail
-
-    # Format detail
-    fmt_detail = {}
-    for cri, cri_v in match_detail.items():
-        for jdw, jdw_v in cri_v["detail"].items():
-            if cv_id in jdw_v:
-                fmt_detail[f"{cri}:{jdw}"] = jdw_v[cv_id]["detail"]
-                fmt_detail[f"{cri}:{jdw}"]["overall"] = jdw_v[cv_id]["overall"]
-
-    return fmt_detail
+    return cv
 
 
 def delete_cvs_by_ids(cv_ids: list[AnyStr]):
