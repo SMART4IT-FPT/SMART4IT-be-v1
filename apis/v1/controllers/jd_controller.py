@@ -8,6 +8,12 @@ from ..schemas.position_schema import PositionSchema
 from ..schemas.jd_schema import JDSchema
 from ..utils.extractor import get_jd_content
 import logging
+import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
+processing_api_url = os.environ.get("PROCESSING_API_URL")
 
 
 def _validate_permission(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
@@ -68,7 +74,6 @@ def get_current_jd(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
 
 async def _analyse_jd_content(content: AnyStr, jd: JDSchema, position: PositionSchema):
     # Define the AI service API endpoint and payload
-    PROCESSING_API_URL = "http://localhost:8000/api/v1/process"
     processing_payload = {
         "doc_ids": [jd.id],
         "doc_type": "jd",
@@ -76,7 +81,7 @@ async def _analyse_jd_content(content: AnyStr, jd: JDSchema, position: PositionS
 
     # Call the AI service API
     async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(PROCESSING_API_URL, json=processing_payload)
+        response = await client.post(processing_api_url, json=processing_payload)
 
     # Check for successful response
     if response.status_code != 200:

@@ -1,30 +1,17 @@
-FROM python:3.10.13-slim-bookworm
+FROM python:3.10.16-slim
 
-# Set environment variables
-ENV CLOUD_HOME=/home/user \
-    PATH=/home/user/.local/bin:$PATH
+# Set working directory
+WORKDIR /app
 
-# Setup new user named user with UID 1000
-RUN useradd -m -u 1000 user
-
-# Define working directory
-WORKDIR $CLOUD_HOME/app
-
-# Switch to user
-USER user
-
-# Copy the requirements file
-COPY --chown=user:user requirements.txt $CLOUD_HOME/app
-
-# Install the requirements
+# Copy and install dependencies
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the files
-COPY --chown=user:user . $CLOUD_HOME/app
+# Copy app source code
+COPY . .
 
-# Expose the port
-EXPOSE 7860/tcp
+# Expose FastAPI default port
+EXPOSE 7860
 
-# Run the application
-EXPOSE 80
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]
+# Run the app
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]

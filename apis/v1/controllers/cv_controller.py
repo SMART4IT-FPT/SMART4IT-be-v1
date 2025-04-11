@@ -13,6 +13,12 @@ from ..providers import memory_cacher, storage_db
 from ..utils.extractor import get_cv_content
 from ..utils.utils import validate_file_extension, get_content_type
 from fastapi.encoders import jsonable_encoder
+import os
+from dotenv import load_dotenv
+load_dotenv
+
+processing_api_url = os.environ.get("PROCESSING_API_URL")
+matching_api_url = os.environ.get("MATCHING_API_URL")
 
 def _validate_permissions(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
     # Validate project id in user's projects
@@ -79,9 +85,6 @@ def _upload_cv_data(data: bytes, filename: AnyStr, watch_id: AnyStr, cv: CVSchem
     memory_cacher.get(watch_id)["percent"][filename] += 5
 
 
-PROCESSING_API_URL = "http://localhost:8000/api/v1/process"
-MATCHING_API_URL = "http://localhost:8000/api/v1/match_cvs"
-
 async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: AnyStr, position: PositionSchema):
     cv_ids = []
     async with httpx.AsyncClient(timeout=60.0) as client:
@@ -117,7 +120,7 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
                 "doc_ids": cv_ids,
                 "doc_type": "cv",
             }
-            response = await client.post(PROCESSING_API_URL, json=processing_payload, timeout=len(cv_ids)*120)   # response schema: {"doc_type": "", "results": []}
+            response = await client.post(processing_api_url, json=processing_payload, timeout=len(cv_ids)*120)   # response schema: {"doc_type": "", "results": []}
             processing_results = response.json().get("results")
 
             for processing_result in processing_results:
@@ -167,7 +170,7 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
             }
         })
 
-        response = await client.post(MATCHING_API_URL, json=matching_payload)       
+        response = await client.post(matching_api_url, json=matching_payload)       
         matching_results = response.json().get("results")
         
         for matching_result in matching_results:
