@@ -1,15 +1,3 @@
-# CVEZ Backend
+# 🔍 Smart4IT Backend
 
-Back-end for CVEZ CV Matcher Tool. Visit deployed product at [Vercel]().
-
-## 🤗 Contributors
-
-## 🚀 How to run local
-
-Install Docker to your computer.
-
-⚠️ Provide `.env` file before run docker. Email for creator quangminh57dng@gmail.com to grant access.
-
-```bash
-docker compose up
-```
+Welcome to the backend of **Smart4IT** – an AI-powered recruitment support system that enables multi-criteria evaluation and matching between candidate CVs and job descriptions.
