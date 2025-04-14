@@ -1,7 +1,8 @@
 from typing import Annotated
 from io import BytesIO
-from fastapi import APIRouter, Depends, BackgroundTasks
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException
 from fastapi.responses import StreamingResponse
+from fastapi import Form
 from io import BytesIO
 from ..schemas.user_schema import UserSchema
 from ..interfaces.cv_interface import (
@@ -27,6 +28,8 @@ from ..controllers.cv_controller import (
     delete_current_cv
 )
 from ..utils.response_fmt import jsonResponseFmt
+import json
+
 
 
 router = APIRouter(prefix="/cv", tags=["CV"])
@@ -50,10 +53,15 @@ async def upload_cvs(
     position_id: str,
     user: Annotated[UserSchema, Depends(get_current_user)],
     cvs: Annotated[UploadCVInterface.cvs, UploadCVInterface.cv_default],
-    weight: dict,  # Accept weight configuration from the frontend
     bg_tasks: BackgroundTasks,
+    weight: str=Form(...),  # receive as string from multipart
 ):
-    upload_id = await upload_cvs_data(project_id, position_id, user, cvs, weight, bg_tasks)
+    try:
+        weight_dict = json.loads(weight)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid weight format, must be JSON.")
+
+    upload_id = await upload_cvs_data(project_id, position_id, user, cvs, weight_dict, bg_tasks)
     return jsonResponseFmt({"progress_id": upload_id})
 
 
@@ -105,6 +113,12 @@ async def download_cvs_summary_list(project_id: str, position_id: str, user: Ann
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=cvs_summary.xlsx"}
     )
+
+
+@router.delete("/{project_id}/{position_id}/{cv_id}", response_model=CVResponseInterface)
+async def delete_cv(project_id: str, position_id: str, cv_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
+    delete_current_cv(project_id, position_id, cv_id, user)
+    return jsonResponseFmt(None, f"CV {cv_id} deleted successfully")
 
 # @router.get("/{project_id}/{position_id}/download/matching", response_class=StreamingResponse)
 # async def download_cvs_matching_list(project_id: str, position_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):

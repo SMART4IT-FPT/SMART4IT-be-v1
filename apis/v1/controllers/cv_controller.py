@@ -121,7 +121,7 @@ def get_cv_by_id(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: U
     return cv
 
 
-async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], weight, bg_tasks: BackgroundTasks):
+async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], weight:dict, bg_tasks: BackgroundTasks):
     # Validate permission
     _, position = _validate_permissions(project_id, position_id, user)
 
