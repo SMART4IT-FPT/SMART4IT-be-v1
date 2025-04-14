@@ -2,6 +2,7 @@ from typing import Annotated
 from io import BytesIO
 from fastapi import APIRouter, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
+from io import BytesIO
 from ..schemas.user_schema import UserSchema
 from ..interfaces.cv_interface import (
     UploadCVInterface,
@@ -14,9 +15,11 @@ from ..interfaces.cv_interface import (
 from ..middlewares.auth_middleware import get_current_user
 from ..controllers.cv_controller import (
     get_all_cvs,
+    get_all_cvs_summary,
     get_cv_by_id,
     upload_cvs_data,
     upload_cv_data,
+    rematch_cvs_data,
     get_upload_progress,
     download_cv_content,
     # get_cv_summary_control,
@@ -47,10 +50,23 @@ async def upload_cvs(
     position_id: str,
     user: Annotated[UserSchema, Depends(get_current_user)],
     cvs: Annotated[UploadCVInterface.cvs, UploadCVInterface.cv_default],
+    weight: dict,  # Accept weight configuration from the frontend
     bg_tasks: BackgroundTasks,
 ):
-    upload_id = await upload_cvs_data(project_id, position_id, user, cvs, bg_tasks)
+    upload_id = await upload_cvs_data(project_id, position_id, user, cvs, weight, bg_tasks)
     return jsonResponseFmt({"progress_id": upload_id})
+
+
+@router.post("/{project_id}/{position_id}/rematch", response_model=dict)
+async def rematch_cvs(
+    project_id: str,
+    position_id: str,
+    user: Annotated[UserSchema, Depends(get_current_user)],
+    weight: dict,  # Accept weight configuration from the frontend
+    bg_tasks: BackgroundTasks
+):
+    result = await rematch_cvs_data(project_id, position_id, user, weight, bg_tasks)
+    return jsonResponseFmt(result)
 
 
 @router.post("/{position_id}/upload", response_model=CVResponseInterface)
@@ -81,7 +97,20 @@ async def get_detail_cv(project_id: str, position_id: str, cv_id: str, user: Ann
     return jsonResponseFmt(cv_detail)
 
 
-@router.delete("/{project_id}/{position_id}/{cv_id}", response_model=CVResponseInterface)
-async def delete_cv(project_id: str, position_id: str, cv_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
-    delete_current_cv(project_id, position_id, cv_id, user)
-    return jsonResponseFmt(None, f"CV {cv_id} deleted successfully")
+@router.get("/{project_id}/{position_id}/download/summary", response_class=StreamingResponse)
+async def download_cvs_summary_list(project_id: str, position_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
+    excel_buffer = get_all_cvs_summary(project_id, position_id, user)
+    return StreamingResponse(
+        excel_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=cvs_summary.xlsx"}
+    )
+
+# @router.get("/{project_id}/{position_id}/download/matching", response_class=StreamingResponse)
+# async def download_cvs_matching_list(project_id: str, position_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
+#     excel_buffer = get_all_cvs_matching(project_id, position_id, user)
+#     return StreamingResponse(
+#         excel_buffer,
+#         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+#         headers={"Content-Disposition": "attachment; filename=cvs_summary.xlsx"}
+#     )

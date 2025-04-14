@@ -2,15 +2,16 @@ from typing import AnyStr
 from fastapi import UploadFile, HTTPException, status, BackgroundTasks
 import uuid
 import time
-import requests
 import httpx
+import pandas as pd
+from io import BytesIO
 from ..schemas.user_schema import UserSchema
 from ..schemas.cv_schema import CVSchema
 from ..schemas.project_schema import ProjectSchema
 from ..schemas.position_schema import PositionSchema
-# from ..schemas.criteria_schema import CriteriaSchema
 from ..providers import memory_cacher, storage_db
 from ..utils.extractor import get_cv_content
+from ..utils.formatter import build_cv_summary_file
 from ..utils.utils import validate_file_extension, get_content_type
 from fastapi.encoders import jsonable_encoder
 import os
@@ -62,6 +63,50 @@ def get_all_cvs(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
     return cvs
 
 
+def get_all_cvs_summary(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
+    _, position = _validate_permissions(project_id, position_id, user)
+
+    cvs = CVSchema.find_by_ids(position.cvs)
+    cvs = [cv.to_dict() for cv in cvs]
+    # Kepp only 'id' and 'summary' keys of the cv
+    cvs = [
+        {
+            "id": cv["id"],
+            "upload_at": cv["upload_at"],
+            "summary": cv["summary"]
+        } 
+        for cv in cvs
+    ]
+    cvs_df = build_cv_summary_file(cvs)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        cvs_df.to_excel(writer, index=False, sheet_name="CVs Summary")
+    output.seek(0)
+    return output
+
+
+def get_all_cvs_matching(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
+    _, position = _validate_permissions(project_id, position_id, user)
+
+    cvs = CVSchema.find_by_ids(position.cvs)
+    cvs = [cv.to_dict() for cv in cvs]
+    # Kepp only 'id' and 'summary' keys of the cv
+    cvs = [
+        {
+            "id": cv["id"],
+            "upload_at": cv["upload_at"],
+            "matching": cv["matching"]
+        } 
+        for cv in cvs
+    ]
+    cvs_df = build_cv_summary_file(cvs)
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        cvs_df.to_excel(writer, index=False, sheet_name="CVs Summary")
+    output.seek(0)
+    return output
+
+
 def get_cv_by_id(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
     _, _ = _validate_permissions(project_id, position_id, user)
 
@@ -70,22 +115,40 @@ def get_cv_by_id(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: U
     if not cv:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="CV not found."
+            detail="CV not found 1."
         )
 
     return cv
 
 
-def _upload_cv_data(data: bytes, filename: AnyStr, watch_id: AnyStr, cv: CVSchema):
-    # Get content type of file
-    content_type = get_content_type(filename)
-    path, url = storage_db.upload(data, filename, content_type)
-    memory_cacher.get(watch_id)["percent"][filename] += 15
-    cv.update_path_url(path, url)
-    memory_cacher.get(watch_id)["percent"][filename] += 5
+async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], weight, bg_tasks: BackgroundTasks):
+    # Validate permission
+    _, position = _validate_permissions(project_id, position_id, user)
+
+    # Create watch id
+    watch_id = str(uuid.uuid4())
+
+    # Read files
+    files: list[bytes] = []
+    filenames: list[AnyStr] = []
+    for cv in cvs:
+        file_content = await cv.read()
+        files.append(file_content)
+        filenames.append(cv.filename)
+
+    # Initialize cache
+    memory_cacher.set(watch_id, {
+        "percent": {},
+        "error": {}
+    })
+
+    # Upload CVs
+    bg_tasks.add_task(_upload_cvs_data, files, filenames, watch_id, position, weight)
+
+    return watch_id
 
 
-async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: AnyStr, position: PositionSchema):
+async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: AnyStr, position: PositionSchema, weight: dict):
     cv_ids = []
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
@@ -124,14 +187,14 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
             processing_results = response.json().get("results")
 
             for processing_result in processing_results:
-                cv_id  = processing_result.get("doc_id")
+                cv_id = processing_result.get("doc_id")
                 summary = processing_result.get("summary")
                 labels = processing_result.get("labels")
                 cv_instance = CVSchema.find_by_id(cv_id)
+                cv_instance.update_weight(weight)
                 cv_instance.update_summary(summary)
                 cv_instance.update_labels(labels)
                 memory_cacher.get(watch_id)["percent"][filename] = 100
-
 
         except Exception as e:
             memory_cacher.get(watch_id)["error"][filename] = str(e)
@@ -142,33 +205,35 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
         matching_payload = jsonable_encoder({
             "jd_id": position.get_jd_by_cvs(cv_ids[0]),  # Pass the first CV ID as a string
             "cv_ids": cv_ids,
-            "weight": {
-                "education_score_config": {
-                    "W_education_score": 0.05
-                },
-                "language_skills_score_config": {
-                    "W_language_skills_score": 0.1
-                },
-                "technical_skills_score_config": {
-                    "W_technical_skills_score": 0.3
-                },
-                "work_experience_score_config": {
-                    "W_work_experience_score": 0.4,
-                    "relevance_score_w": 0.6,
-                    "duration_score_w": 0.2,
-                    "responsibilities_score_w": 0.2
-                },
-                "personal_projects_score_config": {
-                    "W_personal_projects_score": 0.2,
-                    "relevance_score_w": 0.6,
-                    "technologies_score_w": 0.2,
-                    "responsibilities_score_w": 0.2
-                },
-                "publications_score_config": {
-                    "W_publications_score": 0.05,
-                }
-            }
+            "weight": weight  # Use the weight parameter from FE
         })
+# {
+#     "education_score_config": {
+#         "W_education_score": 0.05
+#     },
+#     "language_skills_score_config": {
+#         "W_language_skills_score": 0.1
+#     },
+#     "technical_skills_score_config": {
+#         "W_technical_skills_score": 0.3
+#     },
+#     "work_experience_score_config": {
+#         "W_work_experience_score": 0.4,
+#         "relevance_score_w": 0.6,
+#         "duration_score_w": 0.2,
+#         "responsibilities_score_w": 0.2
+#     },
+#     "personal_projects_score_config": {
+#         "W_personal_projects_score": 0.2,
+#         "relevance_score_w": 0.6,
+#         "technologies_score_w": 0.2,
+#         "responsibilities_score_w": 0.2
+#     },
+#     "publications_score_config": {
+#         "W_publications_score": 0.05,
+#     }
+# }
+
 
         response = await client.post(matching_api_url, json=matching_payload)       
         matching_results = response.json().get("results")
@@ -188,31 +253,14 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
         time.sleep(10)
         memory_cacher.remove(watch_id)
 
-async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], bg_tasks: BackgroundTasks):
-    # Validate permission
-    _, position = _validate_permissions(project_id, position_id, user)
 
-    # Create watch id
-    watch_id = str(uuid.uuid4())
-
-    # Read files
-    files: list[bytes] = []
-    filenames: list[AnyStr] = []
-    for cv in cvs:
-        file_content = await cv.read()
-        files.append(file_content)
-        filenames.append(cv.filename)
-
-    # Initialize cache
-    memory_cacher.set(watch_id, {
-        "percent": {},
-        "error": {}
-    })
-
-    # Upload CVs
-    bg_tasks.add_task(_upload_cvs_data, files, filenames, watch_id, position)
-
-    return watch_id
+def _upload_cv_data(data: bytes, filename: AnyStr, watch_id: AnyStr, cv: CVSchema):
+    # Get content type of file
+    content_type = get_content_type(filename)
+    path, url = storage_db.upload(data, filename, content_type)
+    memory_cacher.get(watch_id)["percent"][filename] += 15
+    cv.update_path_url(path, url)
+    memory_cacher.get(watch_id)["percent"][filename] += 5
 
 
 async def upload_cv_data(position_id: AnyStr, cv: UploadFile, bg_tasks: BackgroundTasks):
@@ -233,13 +281,6 @@ async def upload_cv_data(position_id: AnyStr, cv: UploadFile, bg_tasks: Backgrou
             detail="Position is closed."
         )
 
-    # Validate criterias
-    if len(position.criterias) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="No criteria to analyze."
-        )
-
     # Read files
     file_content = await cv.read()
 
@@ -253,10 +294,61 @@ async def upload_cv_data(position_id: AnyStr, cv: UploadFile, bg_tasks: Backgrou
     })
 
     # Upload CV
-    bg_tasks.add_task(_upload_cv_data, [file_content], [
-                      cv.filename], watch_id, position)
+    bg_tasks.add_task(_upload_cv_data, [file_content], [cv.filename], watch_id, position)
 
     return watch_id
+
+
+async def rematch_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, weight: dict, bg_tasks: BackgroundTasks):
+    '''
+    Retrieve all uploaded CVs in a project and re-match them.
+    '''
+    # Validate permissions
+    _, position = _validate_permissions(project_id, position_id, user)
+
+    # Get all CVs associated with the position
+    cvs = CVSchema.find_by_ids(position.cvs)
+    if not cvs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No CVs found for this position."
+        )
+
+    # Prepare CV IDs for re-matching
+    cv_ids = [cv.id for cv in cvs]
+
+    # Add the re-matching task to background tasks
+    bg_tasks.add_task(_rematch_cvs_task, cv_ids, position, weight)
+
+
+async def _rematch_cvs_task(cv_ids: list[AnyStr], position: PositionSchema, weight: dict):
+    '''
+    Background task to perform re-matching for CVs.
+    '''
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            # Prepare the matching payload
+            matching_payload = jsonable_encoder({
+                "jd_id": position.get_jd_by_cvs(cv_ids[0]),  # Use the first CV ID to get the JD
+                "cv_ids": cv_ids,
+                "weight": weight  # Use the weight parameter from the frontend
+            })
+
+            # Send the payload to the matching API
+            response = await client.post(matching_api_url, json=matching_payload)
+            matching_results = response.json().get("results")
+            print("result", matching_results)
+
+            # Update matching results for each CV
+            for matching_result in matching_results:
+                cv_id = matching_result.get("cv_id")
+                result = matching_result.get("matching_result")
+                cv_instance = CVSchema.find_by_id(cv_id)
+                cv_instance.update_matching(result)
+
+        except Exception as e:
+            # Log the error for debugging
+            print(f"Re-matching failed due to error: {str(e)}")
 
 
 def get_upload_progress(watch_id: AnyStr):
@@ -272,7 +364,7 @@ async def download_cv_content(project_id: AnyStr, position_id: AnyStr, cv_id: An
     if not cv:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="CV not found."
+            detail="CV not found 2."
         )
 
     cv_content = cv.download_content()
@@ -284,23 +376,6 @@ async def download_cv_content(project_id: AnyStr, position_id: AnyStr, cv_id: An
 
     return cv_content
 
-
-# def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
-#     # Validate permission
-#     _, position = _validate_permissions(project_id, position_id, user)
-
-#     # Get Match detail from position
-#     match_detail = position.match_detail
-
-#     # Format detail
-#     fmt_detail = {}
-#     for cri, cri_v in match_detail.items():
-#         for jdw, jdw_v in cri_v["detail"].items():
-#             if cv_id in jdw_v:
-#                 fmt_detail[f"{cri}:{jdw}"] = jdw_v[cv_id]["detail"]
-#                 fmt_detail[f"{cri}:{jdw}"]["overall"] = jdw_v[cv_id]["overall"]
-
-#     return fmt_detail
 
 def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema):
     _, _ = _validate_permissions(project_id, position_id, user)
@@ -316,7 +391,7 @@ def get_cv_detail_control(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr
     if not cv:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="CV not found"
+            detail="CV not found 3"
         )
     return cv
 
@@ -337,18 +412,11 @@ def delete_current_cv(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, us
     if not cv:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="CV not found."
+            detail="CV not found 4."
         )
 
     # Remove CV from position
     position.update_cv(cv_id, is_add=False)
-
-    # Delete vectors
-    # VectorEmbeddingSchema.from_query(
-    #     collection=position_id,
-    #     key="id",
-    #     value=cv_id
-    # ).delete(position_id)
 
     # Delete CV
     cv.delete_cv()

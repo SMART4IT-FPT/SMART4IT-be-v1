@@ -20,10 +20,11 @@ class CVModel(BaseModel):
     name: str = Field("", title="CV Name")
     path: str = Field("", title="CV Path")
     url: str = Field("", title="CV URL")
-    # score: ScoreModel = Field({}, title="CV Score")
-    # extraction: dict = Field({}, title="CV Extraction")
+    weight: dict = Field({}, title="CV Weight")
+    matching: dict = Field({}, title="CV Matching")
     summary: str = Field("", title="CV Summary")
     content: str = Field("", title="CV Content")
+    labels: list[str] = Field([], title="CV Labels")
     status: CVStatus = Field(CVStatus.applying, title="CV Status")
     upload_at: str = Field("", title="CV Upload At")
 
@@ -39,8 +40,7 @@ class CVSchema:
         name: AnyStr = "",
         path: AnyStr = "",
         url: AnyStr = "",
-        # score: ScoreSchema = ScoreSchema(),
-        # extraction: Dict[str, AnyStr] = {},
+        weight: Dict[str, AnyStr] = {},
         matching: AnyStr = "",
         summary: AnyStr = "",
         content: AnyStr = "",
@@ -52,8 +52,7 @@ class CVSchema:
         self.name = name
         self.path = path
         self.url = url
-        # self.score = score
-        # self.extraction = extraction
+        self.weight = weight
         self.matching = matching
         self.summary = summary
         self.content = content
@@ -66,8 +65,7 @@ class CVSchema:
             "name": self.name,
             "path": self.path,
             "url": self.url,
-            # "score": self.score.to_dict(),
-            # "extraction": self.extraction,
+            "weight": self.weight,
             "matching": self.matching,
             "summary": self.summary,
             "content": self.content,
@@ -86,8 +84,7 @@ class CVSchema:
             name=data.get("name"),
             path=data.get("path"),
             url=data.get("url"),
-            # score=ScoreSchema.from_dict(data.get("score")),
-            # extraction=data.get("extraction"),
+            weight=data.get("weight"),
             matching=data.get("matching"),
             summary=data.get("summary"),
             content=data.get("content"),
@@ -120,6 +117,11 @@ class CVSchema:
             "url": url
         })
 
+    def update_weight(self, weight: Dict[str, AnyStr]):
+        self.weight = weight
+        cv_db.update(self.id, {
+            "weight": weight
+        })
 
     def update_summary(self, summary: AnyStr):
         self.summary = summary
