@@ -20,7 +20,7 @@ router = APIRouter(prefix="/user", tags=["User"])
 
 
 admin_guard = GuardCondition(
-    allow_emails=["quangminh57dng@gmail.com"]
+    allow_emails=["truongtrongtien2003@gmail.com"]
 )
 
 
