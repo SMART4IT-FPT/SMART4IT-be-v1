@@ -26,7 +26,7 @@ class CVDetailResponseInterface(BaseModel):
 
 class _CVUploadResponseInterface(BaseModel):
     progress_id: str = Field(...,
-                             description="Progress ID for watching upload progress")
+        description="Progress ID for watching upload progress")
 
 
 class CVUploadResponseInterface(BaseModel):
@@ -43,8 +43,6 @@ class CVUploadProgressInterface(BaseModel):
     msg: str = Field(..., description="Message response")
     data: _CVUploadProgressInterface | None = Field(...,
                                                     description="Upload progress")
-
-
 class UploadCVInterface:
     cv = UploadFile
     cvs = List[UploadFile]

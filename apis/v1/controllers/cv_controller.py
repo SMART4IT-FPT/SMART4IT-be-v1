@@ -11,7 +11,7 @@ from ..schemas.project_schema import ProjectSchema
 from ..schemas.position_schema import PositionSchema
 from ..providers import memory_cacher, storage_db
 from ..utils.extractor import get_cv_content
-from ..utils.formatter import build_cv_summary_file
+from ..utils.formatter import build_cv_summary_file, build_cv_matching_file
 from ..utils.utils import validate_file_extension, get_content_type
 from fastapi.encoders import jsonable_encoder
 import os
@@ -68,21 +68,46 @@ def get_all_cvs_summary(project_id: AnyStr, position_id: AnyStr, user: UserSchem
 
     cvs = CVSchema.find_by_ids(position.cvs)
     cvs = [cv.to_dict() for cv in cvs]
-    # Kepp only 'id' and 'summary' keys of the cv
     cvs = [
         {
             "id": cv["id"],
             "upload_at": cv["upload_at"],
-            "summary": cv["summary"]
+            "summary": cv["summary"],
+            "matching": cv["matching"]
         } 
         for cv in cvs
     ]
+
     cvs_df = build_cv_summary_file(cvs)
+    match_df = build_cv_matching_file(cvs)  # <-- assuming this is your 2nd sheet function
+
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        # Write the first sheet
         cvs_df.to_excel(writer, index=False, sheet_name="CVs Summary")
+        match_df.to_excel(writer, index=False, sheet_name="Matching Scores")
+
+        workbook = writer.book
+
+        # Wrap text format
+        wrap_format = workbook.add_format({'text_wrap': True, 'valign': 'top'})
+
+        # Adjust columns for "CVs Summary"
+        summary_ws = writer.sheets["CVs Summary"]
+        for i, column in enumerate(cvs_df.columns):
+            col_width = max(cvs_df[column].astype(str).map(len).max(), len(column)) + 2
+            summary_ws.set_column(i, i, min(col_width, 30), wrap_format)  # Max width = 50
+
+        # Adjust columns for "Matching Scores"
+        matching_ws = writer.sheets["Matching Scores"]
+        for i, column in enumerate(match_df.columns):
+            col_width = max(match_df[column].astype(str).map(len).max(), len(column)) + 2
+            matching_ws.set_column(i, i, min(col_width, 30), wrap_format)  # Max width = 60
+
     output.seek(0)
     return output
+
+
 
 
 def get_all_cvs_matching(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
@@ -99,10 +124,10 @@ def get_all_cvs_matching(project_id: AnyStr, position_id: AnyStr, user: UserSche
         } 
         for cv in cvs
     ]
-    cvs_df = build_cv_summary_file(cvs)
+    cvs_df = build_cv_matching_file(cvs)
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        cvs_df.to_excel(writer, index=False, sheet_name="CVs Summary")
+        cvs_df.to_excel(writer, index=False, sheet_name=f"Matching Result_{position_id}")
     output.seek(0)
     return output
 
@@ -121,7 +146,7 @@ def get_cv_by_id(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: U
     return cv
 
 
-async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], weight:dict, bg_tasks: BackgroundTasks):
+async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, cvs: list[UploadFile], weight: dict, llm_name: str, bg_tasks: BackgroundTasks):
     # Validate permission
     _, position = _validate_permissions(project_id, position_id, user)
 
@@ -143,12 +168,12 @@ async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSch
     })
 
     # Upload CVs
-    bg_tasks.add_task(_upload_cvs_data, files, filenames, watch_id, position, weight)
+    bg_tasks.add_task(_upload_cvs_data, files, filenames, watch_id, position, weight, llm_name)
 
     return watch_id
 
 
-async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: AnyStr, position: PositionSchema, weight: dict):
+async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: AnyStr, position: PositionSchema, weight: dict, llm_name: str):
     cv_ids = []
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
@@ -182,6 +207,7 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
             processing_payload = {
                 "doc_ids": cv_ids,
                 "doc_type": "cv",
+                "llm_name": llm_name
             }
             response = await client.post(processing_api_url, json=processing_payload, timeout=len(cv_ids)*120)   # response schema: {"doc_type": "", "results": []}
             processing_results = response.json().get("results")
@@ -205,7 +231,8 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
         matching_payload = jsonable_encoder({
             "jd_id": position.get_jd_by_cvs(cv_ids[0]),  # Pass the first CV ID as a string
             "cv_ids": cv_ids,
-            "weight": weight  # Use the weight parameter from FE
+            "weight": weight,  # Use the weight parameter from FE
+            "llm_name": llm_name
         })
 # {
 #     "education_score_config": {
@@ -299,7 +326,7 @@ async def upload_cv_data(position_id: AnyStr, cv: UploadFile, bg_tasks: Backgrou
     return watch_id
 
 
-async def rematch_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, weight: dict, bg_tasks: BackgroundTasks):
+async def rematch_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, weight: dict, llm_name: str, bg_tasks: BackgroundTasks):
     '''
     Retrieve all uploaded CVs in a project and re-match them.
     '''
@@ -318,10 +345,10 @@ async def rematch_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSc
     cv_ids = [cv.id for cv in cvs]
 
     # Add the re-matching task to background tasks
-    bg_tasks.add_task(_rematch_cvs_task, cv_ids, position, weight)
+    bg_tasks.add_task(_rematch_cvs_task, cv_ids, position, weight, llm_name)
 
 
-async def _rematch_cvs_task(cv_ids: list[AnyStr], position: PositionSchema, weight: dict):
+async def _rematch_cvs_task(cv_ids: list[AnyStr], position: PositionSchema, weight: dict, llm_name: str):
     '''
     Background task to perform re-matching for CVs.
     '''
@@ -331,7 +358,8 @@ async def _rematch_cvs_task(cv_ids: list[AnyStr], position: PositionSchema, weig
             matching_payload = jsonable_encoder({
                 "jd_id": position.get_jd_by_cvs(cv_ids[0]),  # Use the first CV ID to get the JD
                 "cv_ids": cv_ids,
-                "weight": weight  # Use the weight parameter from the frontend
+                "weight": weight,  # Use the weight parameter from the frontend
+                "llm_name": llm_name
             })
 
             # Send the payload to the matching API

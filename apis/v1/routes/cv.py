@@ -17,6 +17,7 @@ from ..middlewares.auth_middleware import get_current_user
 from ..controllers.cv_controller import (
     get_all_cvs,
     get_all_cvs_summary,
+    get_all_cvs_matching,
     get_cv_by_id,
     upload_cvs_data,
     upload_cv_data,
@@ -54,6 +55,7 @@ async def upload_cvs(
     user: Annotated[UserSchema, Depends(get_current_user)],
     cvs: Annotated[UploadCVInterface.cvs, UploadCVInterface.cv_default],
     bg_tasks: BackgroundTasks,
+    llm_name: str=Form(...),
     weight: str=Form(...),  # receive as string from multipart
 ):
     try:
@@ -61,7 +63,7 @@ async def upload_cvs(
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid weight format, must be JSON.")
 
-    upload_id = await upload_cvs_data(project_id, position_id, user, cvs, weight_dict, bg_tasks)
+    upload_id = await upload_cvs_data(project_id, position_id, user, cvs, weight_dict, llm_name, bg_tasks)
     return jsonResponseFmt({"progress_id": upload_id})
 
 
@@ -70,10 +72,16 @@ async def rematch_cvs(
     project_id: str,
     position_id: str,
     user: Annotated[UserSchema, Depends(get_current_user)],
-    weight: dict,  # Accept weight configuration from the frontend
-    bg_tasks: BackgroundTasks
+    bg_tasks: BackgroundTasks,
+    llm_name: str=Form(...),
+    weight: str=Form(...),  # Accept weight configuration from the frontend
 ):
-    result = await rematch_cvs_data(project_id, position_id, user, weight, bg_tasks)
+    try:
+        weight = json.loads(weight)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid weight format, must be JSON.")
+    
+    result = await rematch_cvs_data(project_id, position_id, user, weight, llm_name, bg_tasks)
     return jsonResponseFmt(result)
 
 
@@ -108,23 +116,14 @@ async def get_detail_cv(project_id: str, position_id: str, cv_id: str, user: Ann
 @router.get("/{project_id}/{position_id}/download/summary", response_class=StreamingResponse)
 async def download_cvs_summary_list(project_id: str, position_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
     excel_buffer = get_all_cvs_summary(project_id, position_id, user)
+    filename = f"PositionSummary_{position_id}.xlsx"
     return StreamingResponse(
         excel_buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=cvs_summary.xlsx"}
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
-
 
 @router.delete("/{project_id}/{position_id}/{cv_id}", response_model=CVResponseInterface)
 async def delete_cv(project_id: str, position_id: str, cv_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
     delete_current_cv(project_id, position_id, cv_id, user)
     return jsonResponseFmt(None, f"CV {cv_id} deleted successfully")
-
-# @router.get("/{project_id}/{position_id}/download/matching", response_class=StreamingResponse)
-# async def download_cvs_matching_list(project_id: str, position_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
-#     excel_buffer = get_all_cvs_matching(project_id, position_id, user)
-#     return StreamingResponse(
-#         excel_buffer,
-#         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-#         headers={"Content-Disposition": "attachment; filename=cvs_summary.xlsx"}
-#     )

@@ -1,4 +1,5 @@
 import pandas as pd
+from io import BytesIO
 from datetime import datetime
 
 def format_education(education):
@@ -50,7 +51,7 @@ def build_cv_summary_file(cvs):
         contact = pi.get("ContactInformation", {})
         skills = summary.get("Skills", {})
         row = {
-            "ID": i,  # Sequential ID
+            "ID": i,
             "upload_at": cv["upload_at"],
             "Name": pi.get("FullName", ""),
             "Email": contact.get("Email", ""),
@@ -63,6 +64,45 @@ def build_cv_summary_file(cvs):
             "Soft Skills": ", ".join(skills.get("SoftSkills", [])),
             "Certifications": format_certifications(summary.get("CertificationsAndTraining", [])),
             "Languages": format_languages(summary.get("Languages", []))
+        }
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+    df.drop(columns=["upload_at"], inplace=True)
+    return df
+
+def build_cv_matching_file(cvs):
+    # Sort by upload_at (newest first)
+    cvs = sorted(cvs, key=lambda x: datetime.fromisoformat(x["upload_at"]), reverse=True)
+
+    rows = []
+    for i, cv in enumerate(cvs, start=1):
+        summary = cv["summary"]
+        pi = summary.get("PersonalInformation", {})
+        contact = pi.get("ContactInformation", {})
+        matching = cv.get("matching", {})
+        overall = matching.get("overall_result", {})
+        detailed = matching.get("detailed_result", {})
+
+        row = {
+            "ID": i,
+            "upload_at": cv["upload_at"],
+            "Name": pi.get("FullName", ""),
+            "Email": contact.get("Email", ""),
+            "Phone Number": contact.get("PhoneNumber", ""),
+            "Education Score": overall.get("education_score", 0),
+            "Language Skills Score": overall.get("language_skills_score", 0),
+            "Technical Skills Score": overall.get("technical_skills_score", 0),
+            "Work Experience Score": overall.get("work_experience_score", 0),
+            "Personal Projects Score": overall.get("personal_projects_score", 0),
+            "Publications Score": overall.get("publications_score", 0),
+            "Overall Score": overall.get("overall_score", 0),
+            "Education Explanation": detailed.get("education", {}).get("explanation", ""),
+            "Language Skills Explanation": "\n".join([x.get("explanation", "") for x in detailed.get("language_skills", [])]),
+            "Technical Skills Explanation": detailed.get("technical_skills", {}).get("explanation", ""),
+            "Work Experience Explanation": "\n".join([x.get("explanation", "") for x in detailed.get("work_experience", [])]),
+            "Personal Projects Explanation": "\n".join([x.get("explanation", "") for x in detailed.get("personal_projects", [])]),
+            "Publications Explanation": "\n".join([x.get("explanation", "") for x in detailed.get("publications", [])]),
         }
         rows.append(row)
 

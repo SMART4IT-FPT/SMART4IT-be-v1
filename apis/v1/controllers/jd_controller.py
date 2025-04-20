@@ -72,11 +72,12 @@ def get_current_jd(project_id: AnyStr, position_id: AnyStr, user: UserSchema):
     return jd
 
 
-async def _analyse_jd_content(content: AnyStr, jd: JDSchema, position: PositionSchema):
+async def _analyse_jd_content(content: AnyStr, jd: JDSchema, position: PositionSchema, llm_name: str):
     # Define the AI service API endpoint and payload
     processing_payload = {
         "doc_ids": [jd.id],
         "doc_type": "jd",
+        "llm_name": llm_name
     }
 
     # Call the AI service API
@@ -98,7 +99,7 @@ async def _analyse_jd_content(content: AnyStr, jd: JDSchema, position: PositionS
     jd.update_summary(summary)
 
 
-async def _upload_jd_content(content: AnyStr, position: PositionSchema):
+async def _upload_jd_content(content: AnyStr, position: PositionSchema, llm_name):
     # Get current JD
     jd_instance = JDSchema.find_by_id(position.jd)
     if not jd_instance:
@@ -118,13 +119,13 @@ async def _upload_jd_content(content: AnyStr, position: PositionSchema):
     content = get_jd_content(content)
 
     # Analyse JD content
-    await _analyse_jd_content(content, jd_instance, position)
+    await _analyse_jd_content(content, jd_instance, position, llm_name)
 
     # Analyse JD content in the background
     # background_tasks.add_task(_analyse_jd_content, content, jd_instance, position)
 
 
-async def update_current_jd(project_id: AnyStr, position_id: AnyStr, data: BaseModel, user: UserSchema):
+async def update_current_jd(project_id: AnyStr, position_id: AnyStr, data: BaseModel, user: UserSchema, llm_name: str):
     # Validate permission
     _, position = _validate_permission(project_id, position_id, user)
 
@@ -135,4 +136,4 @@ async def update_current_jd(project_id: AnyStr, position_id: AnyStr, data: BaseM
             detail="JD content is required or not be empty."
         )
 
-    await _upload_jd_content(data.content, position)
+    await _upload_jd_content(data.content, position, llm_name)
