@@ -173,44 +173,57 @@ async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSch
     return watch_id
 
 
-async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: AnyStr, position: PositionSchema, weight: dict, llm_name: str):
+async def _upload_cvs_data(
+    cvs: list[bytes],
+    filenames: list[AnyStr],
+    watch_id: AnyStr,
+    position: PositionSchema,
+    weight: dict,
+    llm_name: str
+):
     cv_ids = []
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             for cv, filename in zip(cvs, filenames):
-                memory_cacher.get(watch_id)["percent"][filename] = 0
+                # Khởi tạo percent = 0
+                cache_data = memory_cacher.get(watch_id)
+                if cache_data:
+                    cache_data["percent"][filename] = 0
+                    memory_cacher.set(watch_id, cache_data)
 
-                # Create CV document in database
+                # Tạo CV document
                 cv_instance = CVSchema(name=filename).create_cv()
                 cv_ids.append(cv_instance.id)
-                memory_cacher.get(watch_id)["percent"][filename] += 10
+                update_cache_percent(watch_id, filename, 10)
 
-                # Upload to storage
+                # Upload storage
                 _upload_cv_data(cv, filename, watch_id, cv_instance)
-                memory_cacher.get(watch_id)["percent"][filename] += 10
+                update_cache_percent(watch_id, filename, 10)
 
-                # Save file to cache folder
+                # Lưu cache file + trích content
                 cache_file_path = memory_cacher.save_cache_file(cv, filename)
                 cv_content = get_cv_content(cache_file_path)
                 memory_cacher.remove_cache_file(filename)
-                memory_cacher.get(watch_id)["percent"][filename] += 10
+                update_cache_percent(watch_id, filename, 10)
 
-                # Update content
+                # Update content vào DB
                 cv_instance.update_content(cv_content)
-                memory_cacher.get(watch_id)["percent"][filename] += 10
+                update_cache_percent(watch_id, filename, 10)
 
-                # Update to position
+                # Add vào position
                 position.update_cv(cv_instance.id, is_add=True)
-                memory_cacher.get(watch_id)["percent"][filename] += 10
+                update_cache_percent(watch_id, filename, 10)
 
-            # Send CV content to AI service for document processing
+            # Gửi lên AI processing
             processing_payload = {
                 "doc_ids": cv_ids,
                 "doc_type": "cv",
                 "llm_name": llm_name
             }
-            response = await client.post(processing_api_url, json=processing_payload, timeout=len(cv_ids)*120)   # response schema: {"doc_type": "", "results": []}
+            response = await client.post(processing_api_url, json=processing_payload, timeout=len(cv_ids) * 120)
             processing_results = response.json().get("results")
+
+            filename_by_cv_id = dict(zip(cv_ids, filenames))
 
             for processing_result in processing_results:
                 cv_id = processing_result.get("doc_id")
@@ -220,74 +233,71 @@ async def _upload_cvs_data(cvs: list[bytes], filenames: list[AnyStr], watch_id: 
                 cv_instance.update_weight(weight)
                 cv_instance.update_summary(summary)
                 cv_instance.update_labels(labels)
-                memory_cacher.get(watch_id)["percent"][filename] = 100
+
+                filename = filename_by_cv_id.get(cv_id)
+                if filename:
+                    cache_data = memory_cacher.get(watch_id)
+                    if cache_data and filename in cache_data["percent"]:
+                        cache_data["percent"][filename] = 100
+                        memory_cacher.set(watch_id, cache_data)
 
         except Exception as e:
-            memory_cacher.get(watch_id)["error"][filename] = str(e)
-            memory_cacher.get(watch_id)["percent"][filename] = -1  # Mark as failed
-            raise RuntimeError(f"Process stopped due to error: {str(e)}")  # 🚨 STOP EVERYTHING
+            # Xử lý lỗi cho từng file, đảm bảo không quên set lại cache
+            for filename in filenames:
+                set_cache_error(watch_id, filename, str(e))
+            raise RuntimeError(f"Process stopped due to error: {str(e)}")
 
-        # Perform Matching for all CVs at once
+        # Matching sau khi processing xong
         matching_payload = jsonable_encoder({
-            "jd_id": position.get_jd_by_cvs(cv_ids[0]),  # Pass the first CV ID as a string
+            "jd_id": position.get_jd_by_cvs(cv_ids[0]),
             "cv_ids": cv_ids,
-            "weight": weight,  # Use the weight parameter from FE
+            "weight": weight,
             "llm_name": llm_name
         })
-# {
-#     "education_score_config": {
-#         "W_education_score": 0.05
-#     },
-#     "language_skills_score_config": {
-#         "W_language_skills_score": 0.1
-#     },
-#     "technical_skills_score_config": {
-#         "W_technical_skills_score": 0.3
-#     },
-#     "work_experience_score_config": {
-#         "W_work_experience_score": 0.4,
-#         "relevance_score_w": 0.6,
-#         "duration_score_w": 0.2,
-#         "responsibilities_score_w": 0.2
-#     },
-#     "personal_projects_score_config": {
-#         "W_personal_projects_score": 0.2,
-#         "relevance_score_w": 0.6,
-#         "technologies_score_w": 0.2,
-#         "responsibilities_score_w": 0.2
-#     },
-#     "publications_score_config": {
-#         "W_publications_score": 0.05,
-#     }
-# }
-
-
-        response = await client.post(matching_api_url, json=matching_payload)       
+        response = await client.post(matching_api_url, json=matching_payload)
         matching_results = response.json().get("results")
-        
+
         for matching_result in matching_results:
             cv_id = matching_result.get("cv_id")
             result = matching_result.get("matching_result")
             cv_instance = CVSchema.find_by_id(cv_id)
             cv_instance.update_matching(result)
-            # memory_cacher.get(watch_id)["percent"][cv_instance.name] += 20
 
-        # Mark as completed
-        # for filename in filenames:
-        #     memory_cacher.get(watch_id)["percent"][filename] = 100
+        # Kiểm tra hoàn thành
+        cache_data = memory_cacher.get(watch_id)
+        if cache_data and all(percent >= 100 for percent in cache_data["percent"].values()):
+            cache_data["status"] = "completed"
+            memory_cacher.set(watch_id, cache_data)
+def update_cache_percent(watch_id, filename, delta):
+    cache_data = memory_cacher.get(watch_id)
+    if cache_data and filename in cache_data["percent"]:
+        cache_data["percent"][filename] += delta
+        memory_cacher.set(watch_id, cache_data)
 
-        # Wait for 10 seconds before cleanup
-        time.sleep(10)
-        memory_cacher.remove(watch_id)
+def set_cache_error(watch_id, filename, error_msg):
+    cache_data = memory_cacher.get(watch_id)
+    if cache_data and filename in cache_data["percent"]:
+        cache_data["error"][filename] = error_msg
+        cache_data["percent"][filename] = -1
+        memory_cacher.set(watch_id, cache_data)
+
+
+
 
 
 def _upload_cv_data(data: bytes, filename: AnyStr, watch_id: AnyStr, cv: CVSchema):
-    # Get content type of file
     content_type = get_content_type(filename)
     path, url = storage_db.upload(data, filename, content_type)
-    memory_cacher.get(watch_id)["percent"][filename] += 15
+    cache_data = memory_cacher.get(watch_id)
+    if cache_data and filename in cache_data["percent"]:
+        cache_data["percent"][filename] += 15
+        memory_cacher.set(watch_id, cache_data)
     cv.update_path_url(path, url)
-    memory_cacher.get(watch_id)["percent"][filename] += 5
+    cache_data = memory_cacher.get(watch_id)
+    if cache_data and filename in cache_data["percent"]:
+        cache_data["percent"][filename] += 5
+        memory_cacher.set(watch_id, cache_data)
+
 
 
 async def upload_cv_data(position_id: AnyStr, cv: UploadFile, bg_tasks: BackgroundTasks):
@@ -380,7 +390,13 @@ async def _rematch_cvs_task(cv_ids: list[AnyStr], position: PositionSchema, weig
 
 
 def get_upload_progress(watch_id: AnyStr):
-    return memory_cacher.get(watch_id)
+    progress = memory_cacher.get(watch_id)
+    if progress is None:
+        return {"percent": {}, "error": {}, "status": "not_found"}
+    if "status" not in progress:
+        progress["status"] = "processing"
+    return progress
+
 
 
 async def download_cv_content(project_id: AnyStr, position_id: AnyStr, cv_id: AnyStr, user: UserSchema) -> bytes:
