@@ -10,7 +10,7 @@ DEFAULT_SPACE_NAME = "default"
 # Firebase collections
 USER_COLLECTION = "Users"
 PROJECT_COLLECTION = "Projects"
-POSITION_COLLECTION = "Positions"
+POSITION_COLLECTION = "HiringRequests"
 CV_COLLECTION = "CVs"
 JD_COLLECTION = "JDs"
 QUESTION_COLLECTION = "Questions"

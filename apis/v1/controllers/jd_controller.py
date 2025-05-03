@@ -44,7 +44,7 @@ def _validate_permission(project_id: AnyStr, position_id: AnyStr, user: UserSche
     if not position:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     return project, position

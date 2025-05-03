@@ -5,10 +5,12 @@ import time
 import httpx
 import pandas as pd
 from io import BytesIO
+from datetime import datetime
+from dateutil import parser
 from ..schemas.user_schema import UserSchema
 from ..schemas.cv_schema import CVSchema
 from ..schemas.project_schema import ProjectSchema
-from ..schemas.position_schema import PositionSchema
+from ..schemas.position_schema import PositionSchema, PositionStatus
 from ..providers import memory_cacher, storage_db
 from ..utils.extractor import get_cv_content
 from ..utils.formatter import build_cv_summary_file, build_cv_matching_file
@@ -49,7 +51,14 @@ def _validate_permissions(project_id: AnyStr, position_id: AnyStr, user: UserSch
     if not position:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
+        )
+
+    # Check if position is open for CV uploads
+    if position.status not in [PositionStatus.OPEN, PositionStatus.PROCESSING]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot upload CVs to a closed or cancelled hiring request."
         )
 
     return project, position
@@ -167,6 +176,9 @@ async def upload_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSch
         "error": {}
     })
 
+    # Update position status to PROCESSING
+    position.update_status(PositionStatus.PROCESSING)
+
     # Upload CVs
     bg_tasks.add_task(_upload_cvs_data, files, filenames, watch_id, position, weight, llm_name)
 
@@ -185,13 +197,13 @@ async def _upload_cvs_data(
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
             for cv, filename in zip(cvs, filenames):
-                # Khởi tạo percent = 0
+                # Initialize percent = 0
                 cache_data = memory_cacher.get(watch_id)
                 if cache_data:
                     cache_data["percent"][filename] = 0
                     memory_cacher.set(watch_id, cache_data)
 
-                # Tạo CV document
+                # Create CV document
                 cv_instance = CVSchema(name=filename).create_cv()
                 cv_ids.append(cv_instance.id)
                 update_cache_percent(watch_id, filename, 10)
@@ -200,21 +212,21 @@ async def _upload_cvs_data(
                 _upload_cv_data(cv, filename, watch_id, cv_instance)
                 update_cache_percent(watch_id, filename, 10)
 
-                # Lưu cache file + trích content
+                # Save cache file + extract content
                 cache_file_path = memory_cacher.save_cache_file(cv, filename)
                 cv_content = get_cv_content(cache_file_path)
                 memory_cacher.remove_cache_file(filename)
                 update_cache_percent(watch_id, filename, 10)
 
-                # Update content vào DB
+                # Update content in DB
                 cv_instance.update_content(cv_content)
                 update_cache_percent(watch_id, filename, 10)
 
-                # Add vào position
+                # Add to position
                 position.update_cv(cv_instance.id, is_add=True)
                 update_cache_percent(watch_id, filename, 10)
 
-            # Gửi lên AI processing
+            # Send to AI processing
             processing_payload = {
                 "doc_ids": cv_ids,
                 "doc_type": "cv",
@@ -241,13 +253,22 @@ async def _upload_cvs_data(
                         cache_data["percent"][filename] = 100
                         memory_cacher.set(watch_id, cache_data)
 
+            # Check if end date has passed and auto-close if needed
+            if position.end_date:
+                try:
+                    end_date = parser.parse(position.end_date)
+                    if datetime.now() > end_date:
+                        position.update_status(PositionStatus.CLOSED)
+                except Exception as e:
+                    print(f"Error parsing end date: {str(e)}")
+
         except Exception as e:
-            # Xử lý lỗi cho từng file, đảm bảo không quên set lại cache
+            # Handle errors for each file, ensure cache is updated
             for filename in filenames:
                 set_cache_error(watch_id, filename, str(e))
             raise RuntimeError(f"Process stopped due to error: {str(e)}")
 
-        # Matching sau khi processing xong
+        # Matching after processing is complete
         matching_payload = jsonable_encoder({
             "jd_id": position.get_jd_by_cvs(cv_ids[0]),
             "cv_ids": cv_ids,
@@ -262,12 +283,14 @@ async def _upload_cvs_data(
             result = matching_result.get("matching_result")
             cv_instance = CVSchema.find_by_id(cv_id)
             cv_instance.update_matching(result)
+            position.update_status(PositionStatus.OPEN)
 
-        # Kiểm tra hoàn thành
+        # Check completion
         cache_data = memory_cacher.get(watch_id)
         if cache_data and all(percent >= 100 for percent in cache_data["percent"].values()):
             cache_data["status"] = "completed"
             memory_cacher.set(watch_id, cache_data)
+
 def update_cache_percent(watch_id, filename, delta):
     cache_data = memory_cacher.get(watch_id)
     if cache_data and filename in cache_data["percent"]:
@@ -300,25 +323,21 @@ def _upload_cv_data(data: bytes, filename: AnyStr, watch_id: AnyStr, cv: CVSchem
 
 
 
-async def upload_cv_data(position_id: AnyStr, cv: UploadFile, bg_tasks: BackgroundTasks):
+async def upload_cv_data(project_id: AnyStr, position_id: AnyStr, cv: UploadFile, user: UserSchema, bg_tasks: BackgroundTasks):
     # Validate extension
     validate_file_extension(cv.filename)
 
-    # Get position
-    position = PositionSchema.find_by_id(position_id)
-    if not position:
+    # Validate permission and get position
+    _, position = _validate_permissions(project_id, position_id, user)
+
+    # Check if position is open for CV uploads
+    if position.status not in [PositionStatus.OPEN, PositionStatus.PROCESSING]:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot upload CVs to a closed or cancelled hiring request."
         )
 
-    if position.is_closed:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Position is closed."
-        )
-
-    # Read files
+    # Read file
     file_content = await cv.read()
 
     # Create watch id
@@ -330,10 +349,81 @@ async def upload_cv_data(position_id: AnyStr, cv: UploadFile, bg_tasks: Backgrou
         "error": {}
     })
 
+    # Update position status to PROCESSING
+    position.update_status(PositionStatus.PROCESSING)
+
     # Upload CV
     bg_tasks.add_task(_upload_cv_data, [file_content], [cv.filename], watch_id, position)
 
     return watch_id
+
+# async def _upload_cv_data(
+#     cvs: list[bytes],
+#     filenames: list[AnyStr],
+#     watch_id: AnyStr,
+#     position: PositionSchema
+# ):
+#     cv_ids = []
+#     try:
+#         for cv, filename in zip(cvs, filenames):
+#             # Initialize percent = 0
+#             cache_data = memory_cacher.get(watch_id)
+#             if cache_data:
+#                 cache_data["percent"][filename] = 0
+#                 memory_cacher.set(watch_id, cache_data)
+
+#             # Create CV document
+#             cv_instance = CVSchema(name=filename).create_cv()
+#             cv_ids.append(cv_instance.id)
+#             update_cache_percent(watch_id, filename, 10)
+
+#             # Upload storage
+#             _upload_cv_data_to_storage(cv, filename, watch_id, cv_instance)
+#             update_cache_percent(watch_id, filename, 10)
+
+#             # Save cache file + extract content
+#             cache_file_path = memory_cacher.save_cache_file(cv, filename)
+#             cv_content = get_cv_content(cache_file_path)
+#             memory_cacher.remove_cache_file(filename)
+#             update_cache_percent(watch_id, filename, 10)
+
+#             # Update content in DB
+#             cv_instance.update_content(cv_content)
+#             update_cache_percent(watch_id, filename, 10)
+
+#             # Add to position
+#             position.update_cv(cv_instance.id, is_add=True)
+#             update_cache_percent(watch_id, filename, 10)
+
+#             # Update cache to completed
+#             cache_data = memory_cacher.get(watch_id)
+#             if cache_data and filename in cache_data["percent"]:
+#                 cache_data["percent"][filename] = 100
+#                 memory_cacher.set(watch_id, cache_data)
+
+#             # Check if end date has passed and auto-close if needed
+#             if position.end_date and datetime.now() > datetime.fromisoformat(position.end_date):
+#                 position.update_status(PositionStatus.CLOSED)
+
+#     except Exception as e:
+#         # Handle errors for each file, ensure cache is updated
+#         for filename in filenames:
+#             set_cache_error(watch_id, filename, str(e))
+#         raise RuntimeError(f"Process stopped due to error: {str(e)}")
+
+# def _upload_cv_data_to_storage(data: bytes, filename: AnyStr, watch_id: AnyStr, cv: CVSchema):
+#     content_type = get_content_type(filename)
+#     path, url = storage_db.upload(data, filename, content_type)
+#     cache_data = memory_cacher.get(watch_id)
+#     if cache_data and filename in cache_data["percent"]:
+#         cache_data["percent"][filename] += 15
+#         memory_cacher.set(watch_id, cache_data)
+#     cv.update_path_url(path, url)
+#     cache_data = memory_cacher.get(watch_id)
+#     if cache_data and filename in cache_data["percent"]:
+#         cache_data["percent"][filename] += 5
+#         memory_cacher.set(watch_id, cache_data)
+
 
 
 async def rematch_cvs_data(project_id: AnyStr, position_id: AnyStr, user: UserSchema, weight: dict, llm_name: str, bg_tasks: BackgroundTasks):

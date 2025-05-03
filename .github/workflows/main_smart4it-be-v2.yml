@@ -6,8 +6,8 @@ on:
     branches: [main]
 
 env:
-  AZURE_CONTAINER_REGISTRY: smart4itbev1
-  CONTAINER_APP_NAME: smart4it-be-v1
+  AZURE_CONTAINER_REGISTRY: smart4itbev2
+  CONTAINER_APP_NAME: smart4it-be-v2
   RESOURCE_GROUP: smart4it
 
 jobs:
