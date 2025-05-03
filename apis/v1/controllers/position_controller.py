@@ -51,7 +51,7 @@ def get_position_by_id(project_id: AnyStr, position_id: AnyStr, user: UserSchema
     if position_id not in project.positions:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     # Get position by id
@@ -59,7 +59,7 @@ def get_position_by_id(project_id: AnyStr, position_id: AnyStr, user: UserSchema
     if not position:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     return position
@@ -73,7 +73,7 @@ def get_public_position_by_id(position_id: AnyStr):
     if not position:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     # Get JD Data
@@ -128,7 +128,7 @@ def update_current_position(project_id: AnyStr, position_id: AnyStr, data: BaseM
     if position_id not in project.positions:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     # Get position by id
@@ -136,7 +136,7 @@ def update_current_position(project_id: AnyStr, position_id: AnyStr, data: BaseM
     if not position:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     # Update position in database
@@ -153,7 +153,7 @@ def update_status_current_position(project_id: AnyStr, position_id: AnyStr, user
     if position_id not in project.positions:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     # Get position by id
@@ -161,7 +161,7 @@ def update_status_current_position(project_id: AnyStr, position_id: AnyStr, user
     if not position:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     # Update position in database
@@ -196,7 +196,7 @@ def delete_current_position(project_id: AnyStr, position_id: AnyStr, user: UserS
     if position_id not in project.positions:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     # Get position by id
@@ -204,7 +204,7 @@ def delete_current_position(project_id: AnyStr, position_id: AnyStr, user: UserS
     if not position:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Position not found."
+            detail="Hiring Request not found."
         )
 
     # Delete postion from database

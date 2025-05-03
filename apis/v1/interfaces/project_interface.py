@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional, List, Dict
 from pydantic import BaseModel, Field
 from ..schemas.project_schema import ProjectModel
 
@@ -35,3 +35,18 @@ class UpdateLastOpenedProjectInterface(BaseModel):
 class UpdateMemberProjectInterface(BaseModel):
     members: list[str] = Field(..., title="Project Members")
     is_add: bool = Field(True, title="Add or Remove Member")
+
+
+class ProjectDashboardStats(BaseModel):
+    total_positions: int
+    total_cvs: int
+    open_positions: int
+    processing_positions: int
+    closed_positions: int
+    cancelled_positions: int
+    recent_activities: List[Dict[str, str]]  # List of {type, description, timestamp}
+
+
+class ProjectDashboardResponseInterface(BaseModel):
+    data: ProjectDashboardStats
+    message: Optional[str] = None

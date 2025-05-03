@@ -1,19 +1,27 @@
 from typing import AnyStr, List, Dict
 from pydantic import BaseModel, Field
+from enum import Enum
 from .jd_schema import JDModel, JDSchema
 # from .criteria_schema import CriteriaSchema, CriteriaModel
 from ..providers import position_db
 from ..utils.utils import get_current_time
 
 
+class PositionStatus(str, Enum):
+    OPEN = "open"
+    PROCESSING = "processing"
+    CLOSED = "closed"
+    CANCELLED = "cancelled"
+
+
 class PositionModel(BaseModel):
-    id: str = Field(None, title="Position ID")
-    name: str = Field("", title="Position Name")
-    description: str = Field("", title="Position Description")
-    alias: str = Field("", title="Position Alias")
-    is_closed: bool = Field(False, title="Position is Closed")
-    start_date: str = Field(get_current_time(), title="Position Start Date")
-    end_date: str = Field(None, title="Position End Date")
+    id: str = Field(None, title="Hiring Request ID")
+    name: str = Field("", title="Hiring Request Name")
+    description: str = Field("", title="Hiring Request Description")
+    alias: str = Field("", title="Hiring Request Alias")
+    status: PositionStatus = Field(PositionStatus.OPEN, title="Hiring Request Status")
+    start_date: str = Field(get_current_time(), title="Hiring Request Start Date")
+    end_date: str = Field(None, title="Hiring Request End Date")
     cvs: list[str] = Field([], title="CVs")
     jd: str | JDModel = Field("", title="Job Description")
     # question_banks: list[str] = Field([], title="Question Banks")
@@ -23,11 +31,11 @@ class PositionModel(BaseModel):
 
 
 class PositionMinimalModel(BaseModel):
-    id: str = Field(None, title="Position ID")
-    name: str = Field("", title="Position Name")
-    description: str = Field("", title="Position Description")
-    alias: str = Field("", title="Position Alias")
-    is_closed: bool = Field(False, title="Position is Closed")
+    id: str = Field(None, title="Hiring Request ID")
+    name: str = Field("", title="Hiring Request Name")
+    description: str = Field("", title="Hiring Request Description")
+    alias: str = Field("", title="Hiring Request Alias")
+    status: PositionStatus = Field(PositionStatus.OPEN, title="Hiring Request Status")
     jd: str | JDModel = Field("", title="Job Description")
 
 
@@ -42,7 +50,7 @@ class PositionSchema:
         name: AnyStr = "",
         description: AnyStr = "",
         alias: AnyStr = "",
-        is_closed: bool = False,
+        status: PositionStatus = PositionStatus.OPEN,
         start_date: AnyStr = get_current_time(),
         end_date: AnyStr = None,
         cvs: List[AnyStr] = [],
@@ -56,7 +64,7 @@ class PositionSchema:
         self.name = name
         self.description = description
         self.alias = alias
-        self.is_closed = is_closed
+        self.status = status
         self.start_date = start_date
         self.end_date = end_date
         self.cvs = cvs
@@ -71,7 +79,7 @@ class PositionSchema:
             "name": self.name,
             "description": self.description,
             "alias": self.alias,
-            "is_closed": self.is_closed,
+            "status": self.status,
             "jd": self.jd if isinstance(self.jd, str) else self.jd.to_dict(minimal=minimal),
         }
         if not minimal:
@@ -94,7 +102,7 @@ class PositionSchema:
             name=data.get("name"),
             description=data.get("description"),
             alias=data.get("alias"),
-            is_closed=data.get("is_closed"),
+            status=PositionStatus(data.get("status", PositionStatus.OPEN)),
             start_date=data.get("start_date"),
             end_date=data.get("end_date"),
             cvs=data.get("cvs"),
@@ -134,11 +142,9 @@ class PositionSchema:
     def update_position(self, data: Dict):
         position_db.update(self.id, data)
 
-    def close_position(self):
-        self.update_position({"is_closed": True})
-
-    def open_position(self):
-        self.update_position({"is_closed": False})
+    def update_status(self, status: PositionStatus):
+        self.status = status
+        self.update_position({"status": status})
 
     def delete_position(self):
         position_db.delete(self.id)
@@ -149,8 +155,14 @@ class PositionSchema:
         '''
         if is_add:
             self.cvs.append(cv_id)
+            # Update status to PROCESSING when CVs are added
+            if self.status == PositionStatus.OPEN:
+                self.update_status(PositionStatus.PROCESSING)
         else:
             self.cvs.remove(cv_id)
+            # Update status to OPEN if no CVs left
+            if not self.cvs and self.status == PositionStatus.PROCESSING:
+                self.update_status(PositionStatus.OPEN)
         self.update_position({"cvs": self.cvs})
 
     def update_jd(self, jd_id: AnyStr):

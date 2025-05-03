@@ -7,7 +7,8 @@ from ..interfaces.project_interface import (
     CreateProjectInterface,
     UpdateProjectInterface,
     UpdateLastOpenedProjectInterface,
-    UpdateMemberProjectInterface
+    UpdateMemberProjectInterface,
+    ProjectDashboardResponseInterface,
 )
 from ..schemas.user_schema import UserSchema
 from ..middlewares.auth_middleware import get_current_user
@@ -20,6 +21,7 @@ from ..controllers.project_controller import (
     delete_current_project,
     restore_current_project
 )
+from ..controllers.dashboard_controller import get_project_dashboard_stats
 from ..utils.response_fmt import jsonResponseFmt
 
 
@@ -36,6 +38,19 @@ async def get_projects(user: Annotated[UserSchema, Depends(get_current_user)], g
 async def get_project(project_id: AnyStr, user: Annotated[UserSchema, Depends(get_current_user)], use_alias: Optional[bool] = False):
     project = get_project_by_id(project_id, use_alias, user)
     return jsonResponseFmt(project.to_dict(include_id=True), f"Get project with id {project_id} successfully")
+
+
+@router.get("/{project_id}/dashboard", response_model=ProjectDashboardResponseInterface)
+async def get_project_dashboard(project_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
+    """
+    Get project's dashboard statistics including:
+    - Total positions
+    - Total CVs
+    - Position status counts
+    - Recent activities
+    """
+    stats = await get_project_dashboard_stats(project_id, user)
+    return jsonResponseFmt(stats, f"Project {project_id} dashboard statistics retrieved successfully")
 
 
 @router.post("/", response_model=ProjectResponseInterface)

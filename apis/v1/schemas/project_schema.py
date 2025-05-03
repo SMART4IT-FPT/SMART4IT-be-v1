@@ -48,7 +48,7 @@ class ProjectSchema:
             "alias": self.alias,
             "owner": self.owner,
             "members": [member.to_dict(minimal=True) if isinstance(member, UserSchema) else member for member in self.members],
-            "positions": self.positions,
+            "hiring_requests": self.positions,
             "last_opened": self.last_opened,
         }
         if include_id:
@@ -64,7 +64,7 @@ class ProjectSchema:
             alias=data.get("alias"),
             owner=data.get("owner"),
             members=data.get("members"),
-            positions=data.get("positions"),
+            positions=data.get("hiring_requests"),
             last_opened=data.get("last_opened"),
         )
 
@@ -122,5 +122,5 @@ class ProjectSchema:
         else:
             self.positions.remove(positions_id)
         # Add data to cache
-        project_db.update(self.id, {"positions": self.positions})
+        project_db.update(self.id, {"hiring_requests": self.positions})
         return self

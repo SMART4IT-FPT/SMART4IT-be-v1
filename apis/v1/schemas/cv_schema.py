@@ -10,7 +10,6 @@ from ..utils.utils import get_current_time
 class CVStatus(enum.Enum):
     applying = "APPLYING"
     accepted = "ACCEPTED"
-    rejected = "REJECTED"
     interviewing = "INTERVIEWING"
     hired = "HIRED"
 

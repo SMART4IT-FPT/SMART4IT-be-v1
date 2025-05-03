@@ -17,14 +17,13 @@ from ..middlewares.auth_middleware import get_current_user
 from ..controllers.cv_controller import (
     get_all_cvs,
     get_all_cvs_summary,
-    get_all_cvs_matching,
+    # get_all_cvs_matching,
     get_cv_by_id,
     upload_cvs_data,
-    upload_cv_data,
+    # upload_cv_data,
     rematch_cvs_data,
     get_upload_progress,
     download_cv_content,
-    # get_cv_summary_control,
     get_cv_detail_control,
     delete_current_cv
 )
@@ -85,16 +84,6 @@ async def rematch_cvs(
     return jsonResponseFmt(result)
 
 
-@router.post("/{position_id}/upload", response_model=CVResponseInterface)
-async def upload_cv(
-    position_id: str,
-    cv: Annotated[UploadCVInterface.cv, UploadCVInterface.cv_default],
-    bg_tasks: BackgroundTasks
-):
-    await upload_cv_data(position_id, cv, bg_tasks)
-    return jsonResponseFmt(None, "CV uploaded successfully")
-
-
 @router.get("/{watch_id}", response_model=CVUploadProgressInterface)
 async def get_progress(watch_id: str):
     progress = get_upload_progress(watch_id)
@@ -116,7 +105,7 @@ async def get_detail_cv(project_id: str, position_id: str, cv_id: str, user: Ann
 @router.get("/{project_id}/{position_id}/download/summary", response_class=StreamingResponse)
 async def download_cvs_summary_list(project_id: str, position_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
     excel_buffer = get_all_cvs_summary(project_id, position_id, user)
-    filename = f"PositionSummary_{position_id}.xlsx"
+    filename = f"HiringRequestSummary_{position_id}.xlsx"
     return StreamingResponse(
         excel_buffer,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

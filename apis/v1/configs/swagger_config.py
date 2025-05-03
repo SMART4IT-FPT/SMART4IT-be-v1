@@ -16,7 +16,7 @@ swagger_config = {
             "description": "Read, Create, Update, Delete Projects"
         },
         {
-            "name": "Position",
+            "name": "Hiring Request",
             "description": "Read, Create, Update, Delete Positions"
         },
         {

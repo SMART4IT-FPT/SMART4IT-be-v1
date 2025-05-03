@@ -6,7 +6,8 @@ from ..interfaces.position_interface import (
     UpdatePositionInterface,
     PositionsResponseInterface,
     PositionResponseInterface,
-    PublicPositionInterface
+    PublicPositionInterface,
+    PositionDashboardResponseInterface
 )
 from ..middlewares.auth_middleware import get_current_user
 from ..controllers.position_controller import (
@@ -18,10 +19,11 @@ from ..controllers.position_controller import (
     update_status_current_position,
     delete_current_position,
 )
+from ..controllers.dashboard_controller import get_position_dashboard_stats
 from ..utils.response_fmt import jsonResponseFmt
 
 
-router = APIRouter(prefix="/position", tags=["Position"])
+router = APIRouter(prefix="/position", tags=["Hiring Request"])
 
 
 @router.get("/{project_id}", response_model=PositionsResponseInterface)
@@ -72,3 +74,16 @@ async def open_position(project_id: str, position_id: str, user: Annotated[UserS
 async def delete_position(project_id: str, position_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
     delete_current_position(project_id, position_id, user)
     return jsonResponseFmt(None, f"Delete position with id {position_id} successfully")
+
+
+@router.get("/{project_id}/{position_id}/dashboard", response_model=PositionDashboardResponseInterface)
+async def get_position_dashboard(project_id: str, position_id: str, user: Annotated[UserSchema, Depends(get_current_user)]):
+    """
+    Get position's dashboard statistics including:
+    - Total CVs
+    - CV status counts
+    - Matching scores distribution
+    - Recent activities
+    """
+    stats = await get_position_dashboard_stats(project_id, position_id, user)
+    return jsonResponseFmt(stats, f"Position {position_id} dashboard statistics retrieved successfully")
