@@ -166,9 +166,9 @@ def update_status_current_position(project_id: AnyStr, position_id: AnyStr, user
 
     # Update position in database
     if is_closed:
-        position.close_position()
+        position.update_position("closed")
     else:
-        position.open_position()
+        position.update_position("open")
 
 def delete_positions_by_ids(position_ids: list[AnyStr]):
     # Iterate over all positions id
