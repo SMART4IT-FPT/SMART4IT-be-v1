@@ -55,7 +55,7 @@ def _validate_permissions(project_id: AnyStr, position_id: AnyStr, user: UserSch
         )
 
     # Check if position is open for CV uploads
-    if position.status not in [PositionStatus.OPEN, PositionStatus.PROCESSING]:
+    if position.status not in [PositionStatus.OPEN]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot upload CVs to a closed or cancelled hiring request."
