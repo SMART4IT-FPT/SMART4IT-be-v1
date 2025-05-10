@@ -142,9 +142,9 @@ class PositionSchema:
     def update_position(self, data: Dict):
         position_db.update(self.id, data)
 
-    def update_status(self, status: PositionStatus):
-        self.status = status
-        self.update_position({"status": status})
+    def update_position(self, new_status:PositionStatus):
+        data = {"status": new_status}  # Fix: wrap string in dict
+        position_db.update(self.id, data)
 
     def delete_position(self):
         position_db.delete(self.id)
