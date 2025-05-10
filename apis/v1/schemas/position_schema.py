@@ -2,7 +2,6 @@ from typing import AnyStr, List, Dict
 from pydantic import BaseModel, Field
 from enum import Enum
 from .jd_schema import JDModel, JDSchema
-# from .criteria_schema import CriteriaSchema, CriteriaModel
 from ..providers import position_db
 from ..utils.utils import get_current_time
 

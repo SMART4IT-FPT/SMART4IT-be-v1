@@ -1,5 +1,6 @@
 from typing import AnyStr
 from fastapi import UploadFile, HTTPException, status, BackgroundTasks
+from fastapi.responses import JSONResponse
 import uuid
 import time
 import httpx
@@ -43,7 +44,7 @@ def _validate_permissions(project_id: AnyStr, position_id: AnyStr, user: UserSch
     if position_id not in project.positions:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to access this position."
+            detail="You don't have permission to access this hiring request."
         )
 
     # Get position
@@ -52,13 +53,6 @@ def _validate_permissions(project_id: AnyStr, position_id: AnyStr, user: UserSch
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Hiring Request not found."
-        )
-
-    # Check if position is open for CV uploads
-    if position.status not in [PositionStatus.OPEN]:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot upload CVs to a closed or cancelled hiring request."
         )
 
     return project, position
@@ -334,7 +328,7 @@ async def upload_cv_data(project_id: AnyStr, position_id: AnyStr, cv: UploadFile
     if position.status not in [PositionStatus.OPEN, PositionStatus.PROCESSING]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot upload CVs to a closed or cancelled hiring request."
+            detail="Cannot upload CVs to this hiring request."
         )
 
     # Read file
